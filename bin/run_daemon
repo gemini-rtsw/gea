@@ -1,0 +1,32 @@
+#!/usr/bin/perl
+
+#
+# Sample code to show how to use geautils package.
+#
+
+BEGIN {
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use archiveconfig;
+use geautils qw(run $config $gea_base $gea_data $gea_root $debug $doall $nope);
+
+$doall = 1;
+
+sub handle_daemon($)
+{
+    my ($d_name) = @_;
+
+    print("cd $gea_data$gea_root/$d_name\n") if $debug | $nope;
+    chdir("$gea_data$gea_root/$d_name") unless $nope;
+    my $cmd = "ArchiveDaemon -f $d_name-daemon.xml";
+    print("$cmd\n") if $debug | $nope;
+    system("$cmd") unless $nope;
+}
+
+sub handle_engine($$)
+{
+    my ($d_name, $e_name) = @_;
+}
+
+run(\&handle_daemon, \&handle_engine);

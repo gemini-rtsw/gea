@@ -1,0 +1,421 @@
+#!/usr/bin/perl
+#
+# See usage()
+
+BEGIN
+{
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use English;
+use strict;
+use vars qw($opt_a $opt_d $opt_h $opt_c $opt_s $opt_f $opt_n $opt_p $opt_t);
+use Cwd;
+use File::Path;
+use Getopt::Std;
+use Data::Dumper;
+use Sys::Hostname;
+use archiveconfig;
+
+# Configuration info filled by parse_config_file
+my ($config);
+# Globals, Defaults
+my ($index_dtd);
+my ($indexconfig) = "indexconfig.xml";
+
+# What ArchiveIndexTool to use. "ArchiveIndexTool" works if it's in the path.
+
+my ($ArchiveIndexTool) = "ArchiveIndexTool -v 1";
+my $gea_root="";
+my $d_name="";
+my $runtime="ulimit -S -s 81920; ";
+
+our $gea_base = $ENV{'GEA_BASE'};
+our $gea_data = $ENV{'GEA_DATA'};
+our $gea_host = $ENV{'GEA_HOST'};
+our $gea_conf = $ENV{'GEA_CONF'};
+our $gea_log  = $ENV{'GEA_LOG'};
+
+my $config_name = "$gea_conf/archiveconfig.xml";
+
+sub usage()
+{
+    print("USAGE: update_indices [options]\n");
+    print("\n");
+    print("Based on $config_name, indexconfig.xml files\n");
+    print("are created whereever a <dataserver> entry\n");
+    print("for the <daemon> or <engine> describes an index.\n");
+    print("\n");
+    print("For binary indices, the $ArchiveIndexTool is run.\n");
+    print("\n");
+    print("Finally, the data server configuration is updated.\n");
+    print("\n");
+    print("Options:\n");
+    print(" -h          : help\n");
+    print(" -c <config> : Use given config file instead of $config_name\n");
+    print(" -s <system> : Handle only the given system daemon, not all daemons.\n");
+    print(" -f          : Full re-creation of binary indices, not just update\n");
+    print("               were index files older than the master_index are ignored.\n");
+    print(" -n          : 'nop', do not run ArchiveIndexTool, only create the config files.\n");
+    print(" -p          : Index all data in parallel. WARNING: Heavily loads the machine.\n");
+    print(" -a          : Do not create the files all.xml and current.xml\n");
+    print(" -t          : Time how long it takes to run ArchiveIndexTool on each indices\n");
+    print(" -d          : Debug.\n");
+}
+
+# Create index.xml in current dir with given @indices.
+# Returns number of valid entries,
+# which might be smaller than $#@ in case of !$opt_f.
+# Note that passed arguments $inp_path is being created here, so
+# that's why we're writing to it.
+#
+sub create_indexconfig($@)
+{
+    my ($inp_path, $out_path, $full, @indices) = @ARG;
+    my ($index, $index_age);
+
+    # Get age of master index.
+    if (-f $out_path)			# Ordinary file?
+    {
+        $index_age = -M $out_path;	# Days since script start minus file mod time.
+    }
+    else
+    {   # Need full update if master doesn't exist, yet.
+        $full = 1;
+    }
+
+    if ($opt_d)
+    {
+        print("  Creating \"$inp_path\" for " .  ($full ? "full re-index\n" : "incremental re-index\n"));
+    }
+    
+    open(OUT, ">$inp_path") or die "Cannot create \"$inp_path\"";
+    my ($old_fd) = select OUT;
+    print "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n";
+    print "<!DOCTYPE indexconfig SYSTEM \"$index_dtd\">\n";
+    print "<!--\n";
+    print "     Auto-created. Do not edit!\n";
+    print "  -->\n";
+    print "<indexconfig>\n";
+    my ($valid) = 0;
+    foreach $index ( @indices )
+    {
+	if ((not $full) and (-M $index) > $index_age)
+        {
+	    print("    <!-- Older than 'master_index': '$index' -->\n");
+        }
+        else
+        {
+            print("    <archive>\n");
+            print("        <index>$index</index>\n");
+            print("    </archive>\n");
+            ++$valid;
+        }
+    }
+    print "</indexconfig>\n";
+
+    select $old_fd;
+    close OUT;
+    return $valid;
+}
+
+# Create the indexconfig for the given engine directory.
+# Looks for all files <year>/<day_or_time>/index.
+sub make_engine_index($$)
+{
+    my ($d_dir, $e_dir) = @ARG;
+    my $e_path = "$gea_data$gea_root/$d_dir/$e_dir";
+    my $inp_path = "$e_path/$indexconfig";
+    my $out_path = "$e_path/master_index";
+    my $log_path = "$gea_log/engines/$e_dir/ArchiveIndex.log";
+
+    my ($full) = $opt_f;
+    if ($config->{daemon}{$d_dir}{engine}{$e_dir}{dataserver}{index}{type} eq 'list')
+    {
+        # A 'list' index must list all entries
+        $full = 1;
+    }
+    elsif ($config->{daemon}{$d_dir}{engine}{$e_dir}{dataserver}{index}{type} eq 'serve')
+    {
+        die "Logic error: Should not create engine files for 'served' index in $d_dir/$e_dir\n";
+    }
+
+    # This will be good 'till year 2100
+    my $ifiles = "$gea_data$gea_root/$d_dir/$e_dir/20[0-9][0-9]/*/index";
+    my (@indices) = < $ifiles >;
+    # Write
+    my ($valid) = create_indexconfig($inp_path, $out_path, $full, @indices);
+    if ($valid > 0)
+    {
+	my ($cmd) = "(cd $e_path ; $runtime $ArchiveIndexTool $indexconfig master_index > $log_path 2>&1; touch master_index)";
+        $cmd .= " &" if ($opt_p);
+        print("  $cmd\n") if $opt_d | $opt_n;
+        system($cmd) unless ($opt_n);
+    }
+}
+
+# Create the index config for the given daemon directory.
+sub make_daemon_index($)
+{
+    my ($d_dir) = @ARG;
+    my ($e_dir, @indices);
+
+    my $d_path = "$gea_data$gea_root/$d_dir";
+    my $inp_path = "$d_path/$indexconfig";
+    my $out_path = "$d_path/master_index";
+    my $log_path = "$gea_log/ArchiveIndex.log";
+
+    my ($full) = $opt_f;
+
+    if ($config->{daemon}{$d_dir}{dataserver}{index}{type} eq 'list')
+    {
+        # A 'list' index must list all entries
+        $full = 1;
+    }
+    elsif ($config->{daemon}{$d_dir}{dataserver}{index}{type} eq 'serve')
+    {
+        die "Logic error: Should not create daemon files for 'served' index in $d_dir\n";
+    }
+
+    foreach $e_dir ( sort keys %{ $config->{daemon}{$d_dir}{engine} } )
+    {
+        if ($config->{daemon}{$d_dir}{engine}{$e_dir}{dataserver}{index}{type} eq 'serve')
+        {
+            push @indices, "$gea_data$gea_root/$d_dir/$e_dir/$config->{daemon}{$d_dir}{engine}{$e_dir}{dataserver}{index}{file}";
+        }
+        else
+        {   # assume binary
+            push @indices, "$gea_data$gea_root/$d_dir/$e_dir/master_index";
+        }
+    }
+    # Write
+    my ($valid) = create_indexconfig($inp_path, $out_path, $full, @indices);
+    
+    # Need to create binary daemon index?
+    if ($valid > 0  and $config->{daemon}{$d_dir}{dataserver}{index}{type} eq 'binary')
+    {
+	my ($cmd) = "(cd $d_path ; $runtime $ArchiveIndexTool $indexconfig master_index > $log_path 2>&1; touch master_index)";
+        $cmd .= " &" if ($opt_p);
+        print("  $cmd\n") if $opt_d | $opt_n;
+        system($cmd) unless ($opt_n);
+    }
+}
+
+# Add a key/name/path to the data server config,
+# with check for duplicate key usage.
+my (%serverconfig);
+sub add_serverconfig($$$)
+{
+    my ($key, $name, $path) = @ARG;
+    die "Duplicate key $key for $name ($path),\n"
+        . "already used by $serverconfig{$key}{name} ($serverconfig{$key}{path})\n"
+        if exists($serverconfig{$key});
+
+    printf "  ServerConfig %s as '%s', key '%s'\n", $path, $name, $key if ($opt_d);
+    $serverconfig{$key} = { name => $name, path => $path };
+}
+
+# Print server configuration to $config->{serverconfig},
+# sorted by key.
+sub print_serverconfig()
+{
+    my $filename = "$gea_base/etc/$config->{serverconfig}";
+    open(OUT, ">$filename") or die "Cannot write to $filename\n";
+    my ($old_fd) = select OUT;
+    print("<?xml version='1.0' encoding='UTF-8'?>\n");
+    print("<!DOCTYPE serverconfig SYSTEM 'serverconfig.dtd'>\n");
+    print("<!--\n");
+    print("  Created by update_indices.pl from $config_name.\n");
+    print("  Do not edit manually!\n");
+    print("  -->\n");
+    print("<serverconfig>\n");
+
+    my ($key);
+    foreach $key ( sort { $a <=> $b } keys %serverconfig )
+    {
+        printf("    <archive>\n" .
+               "        <key>%d</key>\n" .
+               "        <name>%s</name>\n" .
+               "        <path>%s</path>\n" .
+               "    </archive>\n",
+               $key,
+               $serverconfig{$key}{name},
+               $serverconfig{$key}{path});
+    }
+    print("</serverconfig>\n");
+    select($old_fd);
+}
+
+sub print_indexconfig($@)
+{
+    my ($name, @entries) = @ARG;
+
+    my $filename = "$gea_data$gea_root/$d_name/$name";
+
+    open(OUT, ">$filename") or die "Cannot write to $filename\n";
+    my ($old_fd) = select OUT;
+    my ($dtd) = "$gea_base/doc/dtd/indexconfig.dtd";
+    print "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n";
+    print "<!DOCTYPE indexconfig SYSTEM \"$index_dtd\">\n";
+    print "<indexconfig>\n";
+    foreach my $index ( @entries )
+    {
+        print "  <archive>\n";
+        print "    <index>$index</index>\n";
+        print "  </archive>\n";
+    }
+    print "</indexconfig>\n";
+    select($old_fd);
+}
+
+# Print server configuration to $config->{serverconfig},
+# sorted by key.
+sub print_combined_indices()
+{
+    my $pathname = "$gea_data$gea_root/$d_name";
+
+    my ($key, @current, @all);
+    foreach $key ( sort { $a <=> $b } keys %serverconfig )
+    {
+        if ($serverconfig{$key}{path} =~ m/current_index\Z/)
+        {
+            push(@current, $serverconfig{$key}{path});
+        }
+        else
+        {
+            push(@all, $serverconfig{$key}{path});
+        }
+    }
+    print_indexconfig("all.xml", @all);
+    print_indexconfig("current.xml", @current);
+    add_serverconfig(1, "- All -", "$pathname/all.xml");
+    add_serverconfig(2, "- All - (last restart)", "$pathname/current.xml");
+}
+
+# Create the daemon and engine index files.
+sub create_indices()
+{
+    my ($d_dir, $e_dir, $index);
+    undef %serverconfig;
+
+    $d_dir = $d_name;
+
+    my ($dc) = $config->{daemon}{$d_dir};
+    my ($need_daemon_index) = 0;
+    # Daemon-level index
+    if (exists($dc->{dataserver}))
+    {   # Check config.
+        if (not exists($dc->{dataserver}{index}{key}))
+        {
+            die "Incomplete <dataserver> entry for '$d_dir':\n" .
+                "No <index> with 'key' attribute.\n";
+        }
+        die("$dc->{dataserver}{index}{content}: Keys < 10 are reserved\n")
+            if ($dc->{dataserver}{index}{key} < 10);
+        # Build on this host?
+        if (is_localhost($dc->{dataserver}{host}))
+        {
+            if ($dc->{dataserver}{index}{type} eq 'list')
+            {
+                $index = "indexconfig.xml";
+                if (-r "$d_dir/master_index")
+                {
+                    print("** Warning: found unused '$d_dir/master_index'\n");
+                }
+       	        $need_daemon_index = 1;
+            }
+            elsif ($dc->{dataserver}{index}{type} eq 'serve')
+            {
+                $index = $dc->{dataserver}{index}{file};
+            }
+            else
+            {
+                $index = "master_index";
+       	    $need_daemon_index = 1;
+            }
+            my $pathname = "$gea_data$gea_root/$d_dir/$index";
+            add_serverconfig($dc->{dataserver}{index}{key},
+                             $dc->{dataserver}{index}{content},
+                             "$pathname");
+        }
+    }
+
+    foreach $e_dir ( keys %{ $config->{daemon}{$d_dir}{engine} } )
+    {
+        my $skip = ($opt_s and not $opt_s =~ $e_dir);
+        print("- Engine '$e_dir'\n") if $opt_d;
+        my ($ec) = $config->{daemon}{$d_dir}{engine}{$e_dir};
+        # Engine-level index
+        if (exists($ec->{dataserver}) and is_localhost($ec->{dataserver}{host}))
+        {   # current_index
+            if (exists($ec->{dataserver}{current_index}))
+            {
+                die("current_index $ec->{dataserver}{current_index}{content}: Keys < 10 are reserved\n")
+                    if ($ec->{dataserver}{current_index}{key} < 10);
+                add_serverconfig($ec->{dataserver}{current_index}{key},
+                                 $ec->{dataserver}{current_index}{content},
+                                 "$gea_root/$d_dir/$e_dir/current_index");
+            }
+            # Create another index?
+            if (exists($ec->{dataserver}{index}))
+            {
+                # Check config.
+                my ($file);
+                if ($ec->{dataserver}{index}{type} eq "binary")
+                {
+                    make_engine_index($d_dir, $e_dir) unless ($skip);
+                    $file = "$gea_data$gea_root/$d_dir/$e_dir/master_index";
+                }
+                elsif ($ec->{dataserver}{index}{type} eq "serve")
+                {
+                    $file = "$gea_data$gea_root/$d_dir/$e_dir/$ec->{dataserver}{index}{file}";
+                }
+                else
+                {
+                    die "Invalid <dataserver> index type for '$d_dir/$e_dir':\n";
+                }
+                if (exists($ec->{dataserver}{index}{key}))
+                {
+                    die("$ec->{dataserver}{index}{content}: Keys < 10 are reserved\n")
+                        if ($ec->{dataserver}{index}{key} < 10);
+                    add_serverconfig($ec->{dataserver}{index}{key},
+                                     $ec->{dataserver}{index}{content},
+                                     $file);
+                }
+            }
+        }
+	# If daemon index is requested, build it after
+	# engine indices have been updated.
+	if ($need_daemon_index and not $skip)
+	{
+	    make_daemon_index($d_dir);
+	}
+    }
+}
+
+# The main code ==============================================
+
+# Parse command-line options
+if (!getopts("padhc:s:fnt") ||  $opt_h)
+{
+    usage();
+    exit(0);
+}
+
+$runtime = "ulimit -S -s 81920; time " if ($opt_t);
+
+
+$config_name = $opt_c if (length($opt_c) > 0);
+$config      = parse_config_file($config_name, 0);
+# $config      = parse_config_file($config_name, $opt_d);
+$index_dtd   = "$gea_base/doc/dtd/indexconfig.dtd";
+
+$gea_root = "/" . $config->{root} if defined($config->{root});
+
+foreach my $d ( sort keys %{ $config->{daemon} } ) { $d_name = $d; last; }
+
+die "Cannot find $index_dtd\n" unless -r $index_dtd;
+
+create_indices();
+print_combined_indices() unless ($opt_a);
+print_serverconfig();

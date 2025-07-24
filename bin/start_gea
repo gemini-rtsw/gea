@@ -1,0 +1,29 @@
+#!/bin/bash
+
+. /etc/profile
+
+echo "Starting gea"
+
+if [ "$1X" = "-nX" ]; then
+    PRETEND=-n
+    echo "Just pretending to start daemons."
+fi
+
+
+#
+# First kill any previously started ArchiverDaemons or ArchiverEngines,
+# remove any lock files, etc.
+#
+
+cleanup_daemon $PRETEND all
+
+
+update_config all
+update_indices all
+update_daemon
+
+#
+# Then start all daemons.
+#
+
+run_daemon $PRETEND all

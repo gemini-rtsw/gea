@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+#       /etc/init.d/caRepeater
+#
+# Starts the caRepeater
+#
+# chkconfig: 345 44 56
+# description: caRepeater for Linux
+# processname: caRepeater
+#
+# Source function library.
+. /etc/profile
+
+# Check that networking is up.
+# [ ${NETWORKING} = "no" ] && exit 0
+
+INSTALL_BIN=/gemini/gea/packages/external/epics/R3.13.4/base/bin/Linux
+EPICS=/gemini/gea/packages/external/epics/R3.13.4
+PATH=$PATH:.:$INSTALL_BIN
+
+[ -x $INSTALL_BIN/startCArepeater ] || exit 0
+
+
+# See how we were called.
+case "$1" in
+  start)
+        echo -n "Starting EPICS CA repeater "
+    #/bin/su epics -m -c "$INSTALL_BIN/startCArepeater"
+   $INSTALL_BIN/startCArepeater
+   ;;
+  stop)
+   pid=`/bin/ps -e | /bin/grep caRepeater | grep -v grep | /bin/sed -e 's/^  *//' -e 's/ .*//'`   
+   if [ "${pid}" != "" ]; then
+      echo -n "Stopping EPICS CA Repeater "
+      /bin/kill ${pid}
+   fi     
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|status|restart|reload}"
+        exit 1
+esac
+
+
+exit 0

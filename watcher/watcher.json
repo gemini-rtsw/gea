@@ -1,0 +1,141 @@
+{
+ "verbose":6,
+ "doemail":true,
+ "emailfreq":30,
+ "groups": {
+  "vxworks": [
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu", "jwhite@gemini.edu", "sos-north@gemini.edu", "aebbers@gemini.edu"]
+    },
+    "comment": "DMA Underflow detected. May cause network problems.",
+    "match": "fatal DMA underflow"
+   },
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu", "jwhite@gemini.edu", "sos-north@gemini.edu", "aebbers@gemini.edu"],
+     "msgq": "vxworks_dma_underflow"
+    },
+    "comment": "Out of memory - reboot required.",
+    "match": "S_memLib_NOT_ENOUGH_MEMORY"
+   },
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu", "jwhite@gemini.edu", "sos-north@gemini.edu", "aebbers@gemini.edu"],
+     "msgq": "vxworks_out_of_memory"
+    },
+    "comment": "Program exception - reboot required.",
+    "match": "Exception current instruction address"
+   },
+   {
+    "action": {
+     "log": "Network issues"
+    },
+    "comment": "",
+    "match": "\"Network connection lost\""
+   },
+
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu"]
+    },
+    "comment": "",
+    "match": "\"S_errno_ENOBUFS\""
+   },
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu"]
+    },
+    "comment": "VxWorks rebooted",
+    "C": "Uses \"Press any key\" message as this is the first message printed and",
+    "C": "it is a common message independent of how reboot was initiated.",
+    "match": "Press any key to stop auto-boot"
+   },
+   {
+    "action": {
+     "email": ["alarm@person"]
+    },
+    "match": "vxworks2"
+   },
+   {
+    "match": "vxaction",
+    "stop": 200,
+    "triggers": [
+     {
+      "action": {
+       "email": ["b@B"]
+      },
+      "match": "vxactiontrigger"
+     }
+    ]
+   }
+  ],
+ "rtems": [
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu"]
+    },
+    "comment": "Program exception",
+    "match": "exception current instruction address"
+   },
+   {
+    "action": {
+     "email": ["tcumming@gemini.edu"]
+    },
+    "comment": "Network failure during boot",
+    "match": "Network Boot Logic Error"
+   },
+   {
+    "action": {
+     "email": ["alarm@person"],
+     "msgq": "rtems_boot_error"
+    },
+    "match": "vxworks2"
+   },
+   {
+    "match": "vxaction",
+    "stop": 200,
+    "triggers": [
+     {
+      "action": {
+       "email": ["b@B"]
+      },
+      "match": "vxactiontrigger"
+     }
+    ]
+   },
+   {
+     "action": {
+      "email": ["tcumming@gemini.edu"]
+     },
+     "comment": "IOC Rebooted",
+     "match": "IOC reboot started"
+    }
+  ]
+ },
+ "watchers": {
+  "gmos-dc": {
+   "groups": [
+    "vxworks"
+   ],
+   "pathname": "/gemsoft/var/log/serialcon/gmos/gmosdc.dat",
+   "logtype": "perle",
+   "watches": [
+    {
+     "match": "arm dummy",
+     "stop": 200,
+     "triggers": [
+      {
+       "action": {
+        "email": [ "tcumming@gemini.edu" ],
+        "msgq": "gmosdc_died"
+       },
+       "comment": "Intentionally left blank",
+       "match": "trigger dummy"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

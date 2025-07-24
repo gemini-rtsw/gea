@@ -1,0 +1,165 @@
+
+
+
+<pre>
+GEA Documentation 
+V1.0
+<a name="Intro"></a>
+<strong><a name="Getting_Started">
+Getting Started</a></strong>
+Welcome to GEA.
+
+<a name="Browsers"><div class="ht1">Browsers</div></a>
+Some of GEA's features make heavy use of javascript. Most of the newer browsers support the 
+standard implementation set by  W3C (World Wide Web Consortium), however there are many 
+older ones still in use, which do not. 
+
+The following is a list of browsers that have been tested with GEA: 
+
+Mozilla - version >=1.2		[<a href="http://www.mozilla.org">www.mozilla.org</a>]
+Firefox - version >=0.8		[<a href="http://www.getfirefox.com">www.getfirefox.org</a>]
+IE - version >= 5.5
+
+We are making a conscious effort of making most features available (working) in many 
+different browsers, but this activity has a secondary role to adding more features,
+and making GEA more complete. 
+
+Majority of the problem when using older browsers are related to:
+- QuickTime selector not working.
+- Fields/Options not updating after making a request. For example, after making a plot, 
+all options should return to the same state the were right before the user clicked
+the UPDATE button - but in older browsers they may not. This also applies to replotting 
+data from Dialy plotts.
+- Channel selections not working.
+- Poor visual quality (This is somewhat subjective...)
+
+Users of Netscape 4.7* are especially prone to experience some of the mentioned shortcomings.
+Mozilla 1.72 should be available on most Solaris workstations. Please ask an ISG 
+representative for help when it cannot be located.
+
+<strong><a name="Plotting_Options">Plotting Options</a></strong>
+The following is a list of <strong>Options</strong> that define how the plots will be created.
+
+<strong>Option: Reduce</strong>
+Value should be an integer. Determines how to reduce the data set. For example when a value 5 
+is given, only every 5th data point will be plotted. Not taken into account when exporting data
+as a spreadsheet.
+
+<strong>Option: Format</strong>
+Plot - Create a plot.
+Spreadsheet - Create a spreadsheet.
+
+<strong>Option: Interpolate</strong>
+Value in seconds; only used when data is displayed as a spreadsheet.
+
+<strong>Option: Fill</strong>
+Used when exporting data in a spreadsheet.Determines whether to 
+fill columns with repeated values.
+
+<strong>Option: Y Min</strong>
+Data only dislayed for points where  y>=[given value]
+
+<strong>Option: Y Max</strong>
+Data only dislayed for points where  y<=[given value]
+
+<strong>Option: Y Label</strong>
+Label along the y-axis.
+
+<strong>Option: X Label</strong>
+Label along the x-axis.
+
+<strong>Option: DPI</strong>
+Size of the shown plot.
+
+<strong>Option: Legend</strong>
+Inside - Legend inside the plot.
+Outside - Legend outside the plot.
+Off - No legend shown.
+
+<strong>Option: Plot Method</strong>
+For a trivial data set {(x0,y0),(x1,y1)} the points would be connected by the following lines:
+*Stepped*
+line1: from (x0,y0) to (x1,y0)
+line2: from (x1,y0) to (x1,y1)
+
+It should be noted that this was the way the old channel archiver used to plot and is therefore
+the default used by GEA.
+
+*NonStepped*
+line1: from (x0,y0) to (x1,y1)
+This type of plotting, simply draws straight lines between adjucent points in the data set.
+
+TODO: Show pictures of this difference
+
+<strong>Option: Line Style</strong>
+For a trivial data set {(x0,y0),(x1,y1)} the points would be connected by the following lines:
+Allows to pick a different line style. 
+
+<strong>Option: Rate Of Change</strong>
+When checked, a rate of change plot is automatically created and displayed below the main plot.
+Raw data can be obtained by clicking on the plot. For the sake of performance, the time stamps 
+are only shown as seconds since the last epoch (Please let me know if more verbose time stamps
+are needed). The derivative at point x[i] is calculated using "central difference":
+
+dy/dx(x[i]) = (y[i+1] - y[i-1]) / (x[i+1] - x[i-1])
+
+Please note that the validy of the result largly depends on the data set being plotted, and 
+in some cases may not be very accurate. This tool is meant only to provide a quick (and rought)
+graphical representation of the rate of change of the channel(s) in question.
+
+
+<strong><a name="Equation_Editor">Equation Editor</a></strong>
+
+This new feature is currently in beta, hence users may experience some problems.
+
+Each equation should be of the form:
+
+[some channel] [operator] [some other channel]
+
+where the operator is one of + -  / *
+and each of the channels is requested within the 'Pattern' field or via the
+Channel Selector.
+
+Equation Options:
+* Plot operands - determines whether to plot the operands (ie. the channels
+used) of the equation(s).
+
+* Equation Interpolate - Value in seconds which determines the interpolation 
+used when getting the data ready before calculations. We need to interpolate
+data to ensure the same timestamps.
+
+A few notes:
+
+* when doing division, all data points for which the denominator is 0 are
+found, and removed from the data set; the corresponding (ie. with the same
+timestamp) data points in the nominator are also removed. This is needed to get
+rid on infinities. This implies that doing division, is likely to be slower than
+any other operation (+, -, *).
+
+* Data needs to be interpolated because when doing mathematical operations, we
+need the same timestamps. For example, if we want to get the power at some time t0,
+we need to know the values of the voltage and the current, both at that same time t0. 
+Since usually different channels will not share timestamps, we need to interpolate. 
+The time range over which the channels will be
+interpolated (and the 'equation' later calculated) is taken by taking common
+timestamps in both data sets. So for example if for channel1 we have data
+between t0 and t3, and for channel2 we have data between t2 and t4 and
+t1&lt;t2&lt;t3&lt;t4, then the interpolated data will be for the time range t such that
+t2&lt;=t&lt;=t3. The calculation will only be performed on data within this common time
+range.
+
+Currently linear interpolation is used.
+
+Some items that are currently on the 'drawing board', include:
+* Getting calculated data exported as text and visible when user clicks on the 
+plot (HIGH PRIORITY)
+* arbitrary equations containing any number of operands along with support for
+brackets. 
+* support for common math functions (ex. sin, cos, log, ln, exp, etc).
+* Other interpolation options (cubic, nearest)
+
+</pre>
+
+
+
+

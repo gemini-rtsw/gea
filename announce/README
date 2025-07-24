@@ -1,0 +1,4 @@
+This directory is meant to contain announcement files. The main one should be called 'announce.main' (this default name can be changed in pyGEA.GEAVars module). If this file exists, is non-empty and pyGEA.GEAVars.showAnnouncement is set to true, the contents are displayed on every GEA page. 
+
+The announce.cron is prepended to to announce.txt during every cron job executions to notify the user that the system is being heavily used.
+

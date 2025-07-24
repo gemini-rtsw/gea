@@ -1,0 +1,2 @@
+kill -12 $(cat /var/run/watcher/watcher.pid)
+

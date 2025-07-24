@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "http://json-schema.org/draft-07/schema#",
+  "title": "Core schema meta-schema",
+  "required": [
+    "verbose",
+    "doemail",
+    "emailfreq",
+    "systems"
+  ],
+  "properties": {
+    "verbose": {
+      "description": "Logging verbosity",
+      "type": "integer",
+      "default": 0
+    },
+    "doemail": {
+      "description": "Enable sending email notifications. Used to disable email for debugging purposes.",
+      "type": "boolean",
+      "default": true
+    },
+    "emailfreq": {
+      "description": "Time in minutes to automatically enable email notifications. 0 minutes disables feature.",
+      "type": "integer",
+      "default": 0
+    },
+    "systems": {
+      "description": "An array of systems to be monitored.",
+      "type": "object",
+      "additionalProperties": true,
+      "propertyNames": {
+        "pattern": "[a-z]*$",
+        "properties": {
+          "notify": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "monitor": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "pvname": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "filter": {
+                "type": "object"
+              },
+              "trigger": {
+                "type": "object"
+              },
+              "options": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

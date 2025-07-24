@@ -1,0 +1,628 @@
+#!/usr/bin/python
+# -*- encoding: utf-8 -*-
+
+import re
+import time
+import logging
+import operator
+import unicodedata
+import GEAVars
+import pytz
+from datetime import datetime, timedelta, tzinfo
+from suds import *
+from suds.client import Client, WebFault
+import sqlite3 as sqlite
+from GEAException import RemedyException, NotImplemented
+import dateutil.parser
+import json
+
+logger = logging.getLogger('suds.client')
+# logger.setLevel(logging.WARN)
+logger.setLevel(logging.DEBUG)
+
+hdlr = logging.FileHandler("/gemsoft/var/log/gea/gea.log")
+hdlr.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+logger.addHandler(hdlr)
+
+wsdlurlNL   = "https://remedy.gemini.edu/arsys/WSDL/public/alderaan.gemini.edu/GEMINI_NightLog_2012"
+
+#
+#
+# Simple logging mechanism that was supposed to go away as soon
+# as I was done debugging a problem but ended up being to usefull
+# to make it go away.
+#
+
+class GemQ:
+
+    #
+    # On first instantiation create Remedy WSDL connections.
+    #
+
+    def __init__(self, database, user, passwd, server):
+
+        try:				# A pythonism to find if a variable is
+            GemQ.opened			# unitialized.
+        except:
+            GemQ.user     = user
+            GemQ.passwd   = passwd
+            GemQ.server   = server	# Not used, kept to maintain compatability.
+            GemQ.url      = '/rest/api/2/search?jql="project"="FR"+AND+'
+            self.__openWSDL()		# Create client connections to Remedy WSDL server.
+            GemQ.opened   = None	# Initialize it.
+
+        self.database = database	# S/b, "FRS" or "NL". Really s/b, "table" not "database".
+        self.site     = None
+
+
+    #
+    # GemQ instance is about to be destroyed.
+    #
+
+    def __del__(self):
+    # Maybe do a del(GemQ.opened) if number of instances is 0?
+        pass
+
+
+    #
+    # No longer used, here for compatability.
+    #
+
+    def logout(self):
+        pass
+
+    #
+    # "querystr" is an old-style Remedy qualification string, E.g.,
+    #    "(('Create Date'>=\"1209809511\") AND ('Create Date'<=\"1249895911\")) AND (('Site'=\"0\"))"
+    #
+    # "keys" is a list of columns in the current (i.e., self.database) database.
+    #
+
+    def query(self, querystr, keys):
+
+        #
+        # Do the actual querying after first converting the old-style query string to the new-style.
+        #
+
+        start_time = time.time()
+        results = self.__queryRemedy(self.database, querystr, keys)
+        query_time = time.time() - start_time
+
+        return results
+
+
+
+    #
+    # Open/create client WSDL's for FRS, Worklog and Nightlogs. These belong to class
+    # GemQ not an instance of GemQ b/c the calling code creates lots of GemQ instances then
+    # throws them away. No use building these repeatably.
+    #
+
+    def __openWSDL(self):
+
+        GemQ.clientNL  = Client(wsdlurlNL)
+        token = GemQ.clientNL.factory.create('AuthenticationInfo')
+        token.userName = self.user
+        token.password = self.passwd
+        GemQ.clientNL.set_options(soapheaders=token)
+
+
+    # Does the actual wsdl Remedy call.
+    #
+
+    def __queryRemedy(self, database, querystr, keys = None):
+
+        try:
+            if database == "FRS":
+                return self.__queryJira(querystr, keys)
+            elif database == "NL":		# Night log database
+                results = GemQ.clientNL.service.Gemini_NightLog_QueryList_Service(querystr, 0, 1000)
+                returnResults = []
+                for result in results:
+                    returnResults.append(self.__mungeResult(result, keys))
+                return returnResults
+            else:
+                logger.warn('queryRemedy with wrong database "' + database + '"')
+                return []
+
+        except WebFault, e:
+            if not e.__str__().find('Entry does not exist in database'):
+                logger.info('WSDL Exception ' + e.__str__())
+                logger.info('WSDL Exception ' + e.fault.__str__())
+                raise
+            return []
+
+        except Exception, e:
+            logger.debug('WSDL Exception ' + e.__str__())
+            raise
+
+
+    # Wrapper to do both sites if needed.
+
+    def __queryJira(self, querystr, keys):
+
+        site = querystr[0:2]
+
+        querystr = re.sub(" ", "+", querystr)
+
+        if site == 'BT':		# BT (BoTh) MK, CP
+            querystr = 'MK' + querystr[2:]
+            rMK = self.__queryJiraSite(querystr, keys)
+            querystr = 'CP' + querystr[2:]
+            rCP = self.__queryJiraSite(querystr, keys)
+            return rMK + rCP
+        else:
+            return self.__queryJiraSite(querystr, keys)
+
+
+    # Query only one site. Needs above wrapper for both sites.
+        
+    def __queryJiraSite(self, querystr, keys):
+
+        site     = querystr[0:2]
+        querystr = querystr[2:]
+
+        if 'Site' not in keys: keys += ("Site",)
+        import base64
+        
+
+        logger.debug("YYYYXXXX %s %s %s" % (site, querystr, keys))
+
+
+
+        if   site == "MK":
+            jh = "osc.hi.gemini.edu"; up = base64.b64encode("swgsupportgn:w44-(Ikz)Q(j8sG0Kp(@")
+            self.timelost = 'customfield_10303'
+            self.occurred = 'customfield_10301'
+            self.solution = 'customfield_10302'
+        elif site == "CP":
+            jh = "osc.cl.gemini.edu"; up = base64.b64encode("swgsupportgs:b7&wp&4bG92(-6N@P")	# Likely wrong
+            self.timelost = 'customfield_10403'
+            self.occurred = 'customfield_10401'
+            self.solution = 'customfield_10402'
+        else: raise Exception('Site not known "%s"' % site)
+
+        if 'Status'    in keys and 'Disposition' not in keys: keys += ('Disposition',)
+
+        keys2Jira = {
+            'TimeLost':             self.timelost,
+            'CaseID':               'key',
+            'AssignedTo':           'assignee',
+            'Date':                 self.occurred,
+            'One line summary':     'summary',
+            'Status':               'status',
+            'Name':                 'reporter',
+            'Disposition':          'resolution',
+            'Labels':               'labels',
+            'Components':           'components',
+            'Detailed description': 'description',
+            'Attachments':          'attachment',
+            'Priority':             'priority',
+            'Work done':            'comment',
+            'Resolution':           self.solution,
+            'Master':               'issuelinks',
+            'Duplicate':            'issuelinks'
+        } 
+
+        keys2Ignore = ("Site")
+
+        f = []
+        for key in keys:
+            if key in keys2Jira:
+                f.append(keys2Jira[key])
+            elif key in keys2Ignore:
+                continue
+            else:
+                raise Exception('Not supported - "%s"' % key)
+
+        if 'comment' in f and 'worklog' not in f: f.append('worklog')
+
+        maxResults    = 10000000	# Just some large number, will set after first query
+        numberResults = 0
+
+        querystr = self.url + querystr + "&fields=" + ",".join(f) + "&maxResults=1000"
+
+        r = []
+
+        import httplib
+
+        while numberResults < maxResults:
+
+            logger.debug("XXXXXXXX %s %s" % (site, querystr))
+
+            hdr = {'Authorization' : 'Basic %s' %  up}
+            con = httplib.HTTPSConnection(jh)
+            con.request("GET", querystr + "&startAt=%d" % numberResults, headers = hdr)
+            res = con.getresponse()
+            if res.status != 200:
+                logger.warn('Bad request, Site: %s, "%s"' % (site, querystr))
+                # print 'BAD REQUEST, "%s"' % querystr
+                return []
+
+            js = json.loads(res.read())
+
+            numberResults += js['maxResults']
+            maxResults     = js['total']
+
+            r += self._majorMunge(js, site, keys)
+
+        return r
+
+
+    # No pretty way to do this :(
+
+    def _majorMunge(self, js, site, keys):
+
+        def _munge3(js, first, second, third):
+            if not js[first]: return ""
+            if not js[first][second]: return ""
+            if not js[first][second][third]: return ""
+            return js[first][second][third]
+
+        def _munge2(js, first, second):
+            if not js[first]: return ""
+            if not js[first][second]: return ""
+            return js[first][second]
+
+        def _munge1(js, first):
+            if not js[first]: return ""
+            return js[first]
+
+        def _mungeText(txt):
+            s = re.sub("\\\\\\\ ", "\n", txt)
+            s = re.sub("\\\\-", "-", s)
+            s = re.sub("\\\\\*", "*", s)
+            return s
+            #return re.sub("\\\\-", "-", re.sub("\\\\\\\ ", "\n", txt))
+
+        def _mungeMasterDups(ms):
+            ik = []
+            for nm in ms:
+                if 'inwardIssue' in nm:
+                    ik.append(_munge2(nm, 'inwardIssue', 'key'))
+            if not ik: return 0.0, []
+            rq='%s("key"="%s")&fields=%s&maxResults=1000' % (site, '"+OR+"key"="'.join(ik), self.timelost)
+            tld = self.__queryJira(rq, ("TimeLost",))
+            tl = 0.0
+            for tli in tld:
+                tl += tli['TimeLost']
+            return tl, ik
+
+        r = []
+        
+        for issue in js['issues']:
+            i = {'Site': site}
+
+            if 'Status' in keys:
+                st = _munge3(issue, 'fields', 'status', 'name')
+                if st == 'Closed':
+                    rs = _munge3(issue, 'fields', 'resolution', 'name')
+                    if rs:
+                        st = rs if rs == 'Duplicate' else st + '-' + rs
+                i['Status'] = st
+
+            if 'Components' in keys:
+                cm = _munge2(issue, 'fields', 'components')
+                cmv = []
+                for nm in cm: 
+                    cmv.append(nm['name'])
+                i['Components'] = cmv
+
+            if 'Attachments' in keys:
+                at = _munge2(issue, 'fields', 'attachment')
+                if at:
+                    atv = []
+                    for nm in at: 
+                        atv.append({'url': nm['content'], 'filename': nm['filename'], 'mime':nm['mimeType']})
+                    i['Attachments'] = atv
+                else: i['Attachments'] = ""
+
+            if 'Work done' in keys:
+                cm = _munge3(issue, 'fields', 'comment', 'comments')
+                cmv = []
+                if cm:
+                    for nm in cm: 
+                        dt = dateutil.parser.parse(nm['created'])
+                        cmv.append({'Date': dt, 'author': nm['author']['name'], 'body':_mungeText(nm['body'])})
+                cm = _munge3(issue, 'fields', 'worklog', 'worklogs')
+                if cm:
+                    for nm in cm: 
+                        dt = dateutil.parser.parse(nm['created'])
+                        cmv.append({'Date': dt, 'author': nm['author']['name'], 'body':_mungeText(nm['comment']), 'time':nm['timeSpent']})
+                i['Work done'] = cmv
+
+            if 'Master' in keys:
+                ms = _munge2(issue, 'fields', 'issuelinks')
+                tl, dups = _mungeMasterDups(ms)
+                i['Master'] = {'TotalTimelost': tl, 'Duplicates': dups} if dups else None
+
+            if 'Duplicate' in keys:
+                ms = _munge2(issue, 'fields', 'issuelinks')
+                ik = []
+                if ms:
+                    for nm in ms: 
+                        if 'outwardIssue' in nm:
+                            ik.append({'Master': _munge2(nm, 'outwardIssue', 'key'),
+                                       'Status': _munge3(nm, 'outwardIssue', 'fields', 'status')['name']})
+                i['Duplicate'] = ik if ik else ""
+
+            if 'TimeLost' in keys:
+                try: i['TimeLost'] = float(_munge2(issue, 'fields', self.timelost))
+                except: i['TimeLost'] = 0.0
+            if 'AssignedTo'           in keys: i['AssignedTo']           = _munge3(issue, 'fields', 'assignee',   'name')
+            if 'Priority'             in keys: i['Priority']             = _munge3(issue, 'fields', 'priority',   'name')
+            if 'Name'                 in keys: i['Name']                 = _munge3(issue, 'fields', 'reporter',   'name')
+            if 'Labels'               in keys: i['Labels']               = _munge2(issue, 'fields', 'labels')
+            if 'Resolution'           in keys: i['Resolution']           = _mungeText(_munge2(issue, 'fields', self.solution))
+            if 'Date' in keys:
+                i['Date'] = dateutil.parser.parse(_munge2(issue, 'fields', self.occurred))
+            if 'One line summary'     in keys: i['One line summary']     = _mungeText(_munge2(issue, 'fields', 'summary'))
+            if 'Detailed description' in keys: i['Detailed description'] = _mungeText(_munge2(issue, 'fields', 'description'))
+            if 'CaseID'               in keys: i['CaseID']               = _munge1(issue, 'key')
+
+            r.append(i)
+
+        return r
+
+
+    #
+    # Iterate through, "keys" finding matching data in result, formatting the
+    # data, and returning a dictionary indexed by, "keys". Each database has
+    # its own set of, "keys". "Database"'s should really be called tables, and
+    # "keys" are really the names of the columns in each table. One could envision
+    # this code translating the column names expected by the caller to the column
+    # names in the database. The caller also expects different data types in each
+    # column than the data in the table, and this code handles that also. The
+    # "rNames" and "rFormats" dictionaries handle the conversions.
+    #
+
+    def __mungeResult(self, result, keys):
+
+        #
+        # Dictionary to map keys to names used in, "result".
+        #
+
+        rNames = {
+            'Additional Comments':      'Additional_Problems',
+            'Additional Support':       'Base_Facility_Support',
+            'Phone Support':            'Phone_Support',
+            'Request ID':               'Request_ID',
+            'Science usage':            'Science_usage',
+            'Observers':                'Summit_Support',
+            'Shutdown':                 'Telescope_shutdown',
+            'Total hours':              'Total_hours_available',
+            'Total hours lost faults':  'Total_hours_lost_faults',
+            'Weather':                  'Total_hours_lost_weather',
+            'Observed':                 'Total_hours_observed',
+            'UT Date':                  'UT_Date',
+            'Shuttered':                'Laser_shuttered',
+            'Blanket Closures':         'Blanket_closures',
+        }
+
+        #
+        # Get rid of unicode characters.
+        #
+
+        def __mungeText(s):
+            if s == None: return None
+            # s = s.replace(u'“', "\"").replace(u'”', "\"")
+            return unicodedata.normalize('NFKD', s).encode('ascii','ignore')
+            # return unicodedata.normalize('NFKD', s).encode('ascii','replace')
+
+        #
+        # Get rid of unicode characters, and "None" values.
+        #
+
+        #
+        # Convert html tag characters "<", and, ">" into "&lt;", and, "&gt;", respectively.
+        #
+
+        def __mungeHtml(s):
+            if s == None: return None
+            s = unicodedata.normalize('NFKD', s).encode('ascii','ignore')
+            return re.sub(r'<', "&lt;", re.sub(r'>', "&gt;", s))
+
+        rFormats = {
+            'Request ID':               lambda x: int(x),
+            'Additional Comments':      lambda x: __mungeHtml(x),
+            'Plan':                     lambda x: __mungeHtml(x),
+            'Details':                  lambda x: __mungeHtml(x),
+            'Summary':                  lambda x: __mungeHtml(x),
+            'UT Date':                  lambda x: time.mktime(x.timetuple()),
+            'Total hours':              lambda x: float((x != '' and x) or "0.0"),
+            'Total hours lost faults':  lambda x: float((x != '' and x) or "0.0"),
+            'Weather':                  lambda x: float((x != '' and x) or "0.0"),
+            'Observed':                 lambda x: float((x != '' and x) or "0.0"),
+            'Science usage':            lambda x: float((x != '' and x) or "0.0"),
+            'Observers':                lambda x: __mungeText(x),
+            'Additional Support':       lambda x: __mungeText(x),
+            'Phone Support':            lambda x: __mungeText(x),
+            'Engineering':              lambda x: float((x != '' and x) or "0.0"),
+            'Commissioning':            lambda x: float((x != '' and x) or "0.0"),
+            'Shutdown':                 lambda x: float((x != '' and x) or "0.0"),
+            'Laser shuttered':          lambda x: float((x != '' and x) or "0.0"),
+            'Non-Chargeable':           lambda x: float((x != '' and x) or "0.0"),
+        }
+
+        if not keys: return result
+
+        retarr = {}
+        for key in keys:
+            if key not in rNames:
+                v = result[key]					# Get the value from, "result".
+            else:
+                v = result[rNames[key]]				# Get the value from, "result".
+            if key in rFormats:
+                retarr[key] = rFormats[key](v)
+            else:
+                retarr[key] = v					# No conversion needed.
+
+        return retarr
+
+
+
+#
+# Test fixture. Do some sample queries.
+#
+# FUTURE MAINTAINERS OF THIS CODE: Please keep the test fixture up to date!
+# Also, if you use a time range that gets lots of values, prepare to wait.
+# 100 FRS entries takes over 20 seconds. Each is preceeded by, "if 1:" so
+# you can individually enable tests.
+#
+
+if __name__ == '__main__':
+
+
+    #
+    # Lets start with some start and end times.
+    #
+
+    import datetime
+
+    #                                          yyyy  mm  dd  hh  mm  ss  tzsecs
+    start_time = time.mktime(datetime.datetime(2018,  4,  6,  0,  0,  0, 36000).timetuple())
+    end_time   = time.mktime(datetime.datetime(2018, 12,  1,  0,  0,  0, 36000).timetuple())
+    # end_time   = time.mktime(datetime.datetime.now().timetuple())
+
+    qFRS = GemQ('FRS', 'gea', 'gea99', None)
+
+    #
+    # Fault report tests
+    #
+
+    if 1:
+        print "\nTest # 1\n"
+        st = datetime.datetime.utcfromtimestamp(start_time)
+        et = datetime.datetime.utcfromtimestamp(end_time)
+        querystr = 'BT"Occurred">="%s"+AND+"Occurred"<="%s"' % (st.strftime("%F+%H:%M"), et.strftime("%F+%H:%M"))
+
+        keys = ('CaseID', 'AssignedTo', 'CaseID', 'Date', 'Detailed description', 'Site', 'Name', 'One line summary',
+                'Components', 'Labels', 'Work done', 'Resolution', 'Priority')
+
+        #
+        # "results" is an array of dicts, one dict per returned database column.
+        # "result" is one of the dicts in the array
+        # "keys" is a list of all possible keys in the "result" dict.
+        # "key" is one of the possible keys in the "result" dict.
+        #
+
+        results = qFRS.query(querystr, keys)
+
+        for result in results:		# Get one of the results
+            print
+            for key in keys:		# Iterate through printing each column name and value.
+                print "%-20.20s = %-.120s" % (key, result[key])
+                # print "%-20.20s" % key
+
+    if 0:
+        print "\nTest # 2\n"
+        querystr = 'MK"key"="FR-39484"'
+        querystr = 'MK"key"="FR-30005"'
+        querystr = 'MK"key"="FR-39485"'
+
+        keys = ('CaseID', 'AssignedTo', 'CaseID', 'Detailed description', 'Attachments', 'Components', 'Labels',
+                'Site', 'Name', 'One line summary', 'Work done', 'Resolution', "Master", "Duplicate")
+
+        retval = qFRS.query(querystr, keys)
+
+        for n in retval:
+            print
+            if n['Master']: print "COWS"
+            for key in keys:
+                #print "%-20.20s = %-.80s" % (key, n[key])
+                print key, n[key]
+
+
+    if 0:
+        print "\nTest # 2.1\n"
+        querystr = "('AssignedTo'=\"nickj\")"
+        querystr = "('Assignee_Login'=\"nickj\")"
+        querystr = "'AssignedTo'=\"jvaras\" AND ('Status'=1 OR 'Status'=2)"
+        querystr = "'Assignee_Login'=\"schan\" AND ('Status'=\"Assigned\" OR 'Status'=\"InProgress\")"
+        querystr = "('CaseID'=)"
+        querystr = "'Assignee_Login'=\"schan\" AND('Status'=\"Assigned\" OR 'Status'=\"Work In Progress\")"
+
+        keys = ('CaseID', 'AssignedTo', 'CaseID',
+                'Detailed description', 'Site', 'Name', 'One line summary',
+                'Category', 'System', 'Subsystem', 'Component', 'Work done', 'Resolution')
+
+        retval = qFRS.query(querystr, keys)
+
+        for n in retval:
+            print
+            for key in keys:
+                print "%-20.20s = %-.80s" % (key, n[key])
+
+
+    if 0:
+        print "\nTest # 3\n"
+        querystr = \
+            "(('Create Date'>=\"%d\") AND ('Create Date'<=\"%d\")) AND (('Site'=1))" \
+                % (start_time, end_time)
+
+        keys = ('CaseID', 'Create Date', 'AssignedTo', 'One line summary', 'Status', 'TimeLost',
+                'Category', 'System', 'Subsystem', 'Component', 'Work done', 'Resolution')
+
+        retval = qFRS.query(querystr, keys)
+
+        for n in retval:
+            print
+            for key in keys:
+                print "%-20.20s = %-.80s" % (key, n[key])
+
+    #
+    # Night log tests
+    #
+
+    #                                          yyyy  mm  dd  hh  mm  ss  tzsecs
+    start_time = time.mktime(datetime.datetime(2009,  7,  1,  0,  0,  0, 36000).timetuple())
+
+    if 0:
+        print "\nTest # 4\n"
+        qNL = GemQ('NL', 'gea', 'gea99', None)
+
+        querystr = \
+            "(('UT Date'>=\"%d\") AND ('UT Date'<=\"%d\")) AND (('Telescope'=\"North\"))" \
+                % (start_time, end_time)
+
+        keys = ('Additional Comments', 'Additional Support', 'BriefDescription10', 'BriefDescription11',
+                'BriefDescription12', 'BriefDescription13', 'BriefDescription14', 'BriefDescription15',
+                'BriefDescription16', 'BriefDescription17', 'BriefDescription18', 'BriefDescription19',
+                'Commissioning', 'Details', 'Engineering', 'FRSNumber10', 'FRSNumber11', 'FRSNumber12',
+                'FRSNumber13', 'FRSNumber14', 'FRSNumber15', 'FRSNumber16', 'FRSNumber17', 'FRSNumber18',
+                'FRSNumber19', 'Shuttered', 'Phone Support' , 'Plan', 'Science usage', 'Summary',
+                'Observers', 'Shutdown', 'TimeLost10', 'TimeLost11', 'TimeLost12', 'TimeLost13',
+                'TimeLost14', 'TimeLost15', 'TimeLost16', 'TimeLost17', 'TimeLost18', 'TimeLost19',
+                'Total hours', 'Total hours lost faults', 'Weather',
+                'Observed', 'UT Date')
+
+        retval = qNL.query(querystr, keys)
+
+        for n in retval:
+            print
+            for key in keys:
+                print "%-20.20s = %-.80s" % (key, n[key])
+
+    if 0:
+        print "\nTest # 5\n"
+        querystr = \
+            "(('UT Date'>=\"%d\") AND ('UT Date'<=\"%d\")) AND (('Telescope'=\"North\"))" \
+                % (start_time, end_time)
+
+        keys = ('Additional Comments', 'Additional Support', 'BriefDescription10', 'BriefDescription11',
+                'BriefDescription12', 'BriefDescription13', 'BriefDescription14', 'BriefDescription15',
+                'BriefDescription16', 'BriefDescription17', 'BriefDescription18', 'BriefDescription19',
+                'Commissioning', 'Details', 'Engineering', 'FRSNumber10', 'FRSNumber11', 'FRSNumber12',
+                'FRSNumber13', 'FRSNumber14', 'FRSNumber15', 'FRSNumber16', 'FRSNumber17', 'FRSNumber18',
+                'FRSNumber19', 'Shuttered', 'Phone Support' , 'Plan', 'Science usage', 'Summary',
+                'Observers', 'Shutdown', 'TimeLost10', 'TimeLost11', 'TimeLost12', 'TimeLost13',
+                'TimeLost14', 'TimeLost15', 'TimeLost16', 'TimeLost17', 'TimeLost18', 'TimeLost19',
+                'Total hours', 'Total hours lost faults', 'Weather',
+                'Observed', 'UT Date')
+
+        retval = qNL.query(querystr, keys)
+
+        for n in retval:
+            print
+            for key in keys:
+                print "%-20.20s = %-.80s" % (key, n[key])

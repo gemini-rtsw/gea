@@ -1,0 +1,56 @@
+#!/usr/bin/perl
+
+#
+# Check engines for indextool_active.lck
+# if it exists, send an email notification
+#
+
+BEGIN {
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use archiveconfig;
+use geautils qw(run $config $gea_base $gea_data $gea_root $debug $doall $nope);
+
+$doall = 1;
+
+$to_cp = 'ekurz@gemini.edu,tim.gaggstatter@noirlab.edu,roberto.rojas@noirlab.edu,cristian.urrutia@noirlab.edu,pedro.gigoux@noirlab.edu';
+$to_mk = 'emma.kurz@noirlab.edu,hawi.stecher@noirlab.edu,patrick.parks@noirlab.edu,matt.rippa@noirlab.edu,anthony.sylvester@noirlab.edu';
+if ( $ENV{GEMINI_SITE} eq 'MK' )
+{
+     $to = $to_mk;
+}
+else 
+{
+     $to = $to_cp;
+}
+
+$from = 'noreply@gemini.edu';
+
+sub handle_daemon($)
+{
+    my ($d_name) = @_;
+}
+
+sub handle_engine($$)
+{
+    my ($d_name, $e_name) = @_;
+
+    chdir("$gea_data$gea_root/$d_name/$e_name") unless $nope;
+    if (-e 'indextool_active.lck')
+    {
+	open(MAIL, "|/usr/sbin/sendmail -t");
+
+	print MAIL "To: $to\n";
+	print MAIL "From: $from\n";
+	print MAIL "Subject: GEA - Issues indexing $e_name\n\n";
+	$message = "There was a problem indexing $e_name. Please manually reindex it.\n";
+	print MAIL $message;
+	$result = close(MAIL);
+
+    }
+
+
+}
+
+run(\&handle_daemon, \&handle_engine);

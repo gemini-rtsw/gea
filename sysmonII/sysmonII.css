@@ -1,0 +1,92 @@
+table {
+  width: 100%;
+}
+
+tr:nth-child(even) {
+  background-color: #e8e8e8;
+}
+
+thead {
+  font-family: arial, helvetica, sans-serif;
+  font-size: 10pt;
+  background-color: #e0e0e0;
+}
+
+tfoot {
+  font-family: arial, helvetica, sans-serif;
+  font-size: 10pt;
+  background-color: #ffffff;
+}
+
+td {
+  font-family: arial, helvetica, sans-serif;
+  font-size: 10pt;
+}
+
+.emailstatus {
+  font-family: arial, helvetica, sans-serif;
+  font-size: 10pt;
+}
+
+.heading {
+  text-align: center;
+  font-size: 10pt;
+  font-weight: bold;
+  background-color: #e5d5b5;
+}
+
+.goodsysname {
+  font-family: verdana, arial, sans-serif;
+  color: green;
+  font-weight: bold;
+}
+
+.badsysname {
+  font-family: verdana, arial, sans-serif;
+  color: red;
+  font-weight: bold;
+}
+
+.warnsysname {
+  font-family: verdana, arial, sans-serif;
+  color: orange;
+  font-weight: bold;
+}
+
+.goodvalue {
+  color: green;
+  font-weight: bold;
+}
+
+.badvalue {
+  color: red;
+  font-weight: bold;
+}
+
+.warnvalue {
+  color: orange;
+  font-weight: bold;
+}
+
+.disconnected {
+  color: gray;
+  font-weight: bold;
+}
+
+#infopopup {
+  visibility: hidden;
+  background-color: #fefeff;
+  color: black;
+  padding: 8px;
+  border: 1px solid black;
+  position: absolute;
+  z-index: 1;
+}
+
+td.info {
+  text-align: center;
+}
+
+canvas {
+  border: 0px solid black;
+}

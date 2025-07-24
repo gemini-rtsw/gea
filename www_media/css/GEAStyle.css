@@ -1,0 +1,561 @@
+/* Stylesheet for the GEA  
+ * Needs a MAJOR cleanup! */
+
+pre	
+{	
+    font-family: arial, helvetica, sans-serif;
+    font-size: 10pt;
+}  
+
+/* Table lists */
+.tableList 
+{	
+    border-style: solid;
+    border-width: 0;
+}
+                
+.tableList tr 
+{ 
+    background-color: white;    
+}
+
+.odd
+{
+    background-color: white; 
+}
+
+.even 
+{ 
+    background-color: #EDEEEE; 
+}
+
+/* Dynamic Channels Table */
+.dynChanTable {border-style: solid;
+                          border-width: 0;
+                          width: 650px;}
+
+/* Dynamic Channels Sub Table */
+.dynChanSubTable {border-style: solid;
+							border-width: 0;
+                                 width: 100%;}
+
+.sectionMain {text-align: center;
+                font-size: 10pt;
+                font-weight: bold;
+                background-color: #90c9b3;
+
+}
+.section {text-align: left;
+                font-size: 9pt;
+                font-weight: bold;
+                background-color: #c9dcd5;
+}     
+
+.headingLeft {text-align: left;
+                font-size: 9pt;
+                font-weight: bold;
+                background-color: #e5d5b5;
+}       
+
+.heading{text-align: center;
+                font-size: 10pt;
+                font-weight: bold;
+                background-color: #e5d5b5;
+}
+
+.title {	 text-align: center;
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+        font-weight: bold;
+	background-color: #ddf;
+	}
+
+.helpSection { 
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+    font-weight: bold;
+    color: blue;
+	}
+    
+.withBorder {		border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    }
+    
+table.textBox2 { width: 650px;}
+td.textBox2 { text-align: center;}
+    
+.mainPage {
+        background-color: white;
+}
+
+body	{ margin:0px 0 0 0px;
+	  background: white;
+         font-family: Lucida Sans Unicode, Lucida, Geneva;
+         font-size: 12pt;
+         font-style: normal;
+
+	 }
+/* url(/www_media/images/back1.png) */
+       
+b	{font-family: Lucida Sans Unicode, Lucida, Geneva;
+         font-size: 12pt;
+         font-weight: bold;
+         font-style: normal}
+
+em	{font-family: Lucida Sans Unicode, Lucida, Geneva;
+         font-size: 12pt;
+         font-weight: normal;
+         font-style: italic}
+
+td       {
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	}	
+
+
+.boxed1 {
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+        padding: 0.5em;
+        margin: 1em;
+        background-color: #ddd;
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+	font-size: 12pt	
+        }
+
+
+.boxed2 {
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+        padding: 0.5em;
+        margin: 1em;
+        background-color: #dce;
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+	font-size: 12pt	
+        }
+        
+.announcement {
+	font-family: arial, helvetica, sans-serif;
+        padding:  5px 5px 5px 5px;
+        margin: 5px 12px 5px 12px;
+        background-color: white;
+	font-size: 10pt;
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+        }
+.announcement legend {
+	font-family: arial, helvetica, sans-serif;
+        padding:  0px 2px 0px 2px;
+        margin: 2px 12px 2px 12px;
+        background-color: #d1667d;
+        background-color: #f9c7c7;
+        font-size: 14pt;
+        border-style: solid;
+        border-width: 1px;
+        border-color: black;
+	}
+
+.notice {font-family: Lucida Sans Unicode, Lucida, Geneva;
+        padding:  5px 5px 5px 5px;
+        margin: 5px 12px 5px 12px;
+        background-color: white;
+        font-size: 10pt;
+        border-style: solid;
+        border-width: 1px;
+        border-color: black;
+        }
+
+.notice legend {
+	font-family: arial, helvetica, sans-serif;
+        padding:  0px 2px 0px 2px;
+        margin: 2px 12px 2px 12px;
+        background-color:#dfd;
+        font-size: 14pt;
+        border-style: solid;
+        border-width: 1px;
+        border-color: black;
+	}
+
+.error {
+	font-family: arial, helvetica, sans-serif;
+        padding:  5px 5px 5px 5px;
+        margin: 5px 12px 5px 12px;
+        background-color: white;
+	font-size: 10pt;
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+        }
+
+.error legend { 
+	font-family: arial, helvetica, sans-serif;
+        padding:  0px 2px 0px 2px;
+        margin: 2px 12px 2px 12px;
+        background-color: #d1667d;
+        font-size: 14pt;
+        border-style: solid;
+        border-width: 1px;
+        border-color: black;
+	}
+
+.widget { background-color: #ffffff;
+
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	}
+
+
+
+.buttonLink { 
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	border-style: solid;
+	border-width: 1px;
+        border-color: black;  
+        margin: 200px 200px 200px 0px;
+	padding: 5 5 5 5;
+	}
+
+
+/* Labels in the time selectors   #5ce0f2; - nice brown/gray */
+.widgetTimeLabel {
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	background-color: #ddf; 
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+
+    /* Labels in the channel selectors */
+.widgetChanSelLabel {
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	background-color: #ddf; 
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+	} 
+
+ 
+.widgetLabel {
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	background-color: #ddf;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+
+.widgetOptionCell{
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+    background-color: #e5d5b5;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+
+.widget.innerTable{
+	background-color: #dfd;
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	}	
+
+.mainSideBar {background: #ffffff;  
+	width: 350px;
+	padding: 0 0 0 0;
+	 }
+/* FRS=Fault Reporting System */
+.FRSLabel {
+	 text-align: center;
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	background-color: #ddf;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+/* FRS=Fault Reporting System */
+.FRSOptionCell{
+	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+        background-color: #e5d5b5;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+
+/* NL=Night Log */
+.NLLabel { 
+	text-align: center;
+font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	background-color: #ddf;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+/* NL=Night Log */
+.NLOptionCell{
+font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+    background-color: #e5d5b5;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+	}
+
+td.label1 {font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+	background-color: #ddf;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+}
+
+td.label2 {	font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+        background-color: #e5d5b5;
+    /*
+	border-style: solid;
+	border-width: 1px;
+    border-color: black;
+    */
+}
+
+td.dynImTable {	
+	font-family: arial, helvetica, sans-serif;
+	font-size: 12pt;
+        background-color: #e5d5b5;
+}
+
+pre.textbox {
+        font-family: arial, helvetica, sans-serif;
+	font-size: 10pt;
+        padding: 0.5em;
+        margin: 1em;
+        background-color: #EDEEEE; 
+        /* background-color: #ddd; */
+	border-style: solid;
+	border-width: 1px;
+        border-color: black;
+}
+
+pre.textbox2{
+        font-family: arial, helvetica, sans-serif;
+	font-size: 12pt;
+	padding: 0.3em;
+	margin: 0.1em;
+        background-color: white; 
+	width: 600px;
+}
+
+
+
+td.textBox3 {
+    font-family: arial, helvetica, sans-serif;
+    font-size: 10pt;
+    color: green;
+}
+    
+pre.textboxSmall {
+	font-family: arial,  helvetica, monospace;
+        padding: 0.5em;
+        margin: 1em;
+        background-color: #ddd;
+	border-style: solid;
+	border-width: 1px;
+        border-color: black;
+	font-size: 6pt	
+}
+
+a.a1  {
+    font-family: arial, "lucida console", sans-serif;
+    font-size: 10pt;
+    font-weight: bold;
+}
+
+a.a1:hover  {color: red;}
+
+.format1  {
+    font-family: arial, helvetica, sans-serif;
+    font-size: 10pt;
+    color: #9d5b0c;
+    font-weight: bold;
+}
+    
+
+/**********************************
+Header/Footer     
+**********************************/
+
+/*Used to display MK or CP. */
+.site { font-weight: bold;
+	font-family: arial, helvetica, sans-serif;
+	font-size: 12pt;
+        background:  white; 
+	color:red;
+}
+
+table.mainHeader {
+        background: #ffffff ;
+}
+
+/* old: #ddf; */
+table.secondaryHeader {
+        background:  #c0e7b5; 
+	border-style: solid;
+	border-width: 1px;
+	border-color: black;
+}
+
+td.secondaryHeader{
+	font-weight: bold;
+	font-family: arial, helvetica, sans-serif;
+	font-size: 12pt;
+        background-color: #c0e7b5;
+}
+
+table.mainFooter{
+	background: #c0e7b5;
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+	font-weight: bold;
+	font-size: 8pt;
+	border-style: solid;
+	border-width: 1px;
+	border-color: black;
+}
+
+td.mainFooter {
+	font-weight: bold;
+	font-family: arial, helvetica, sans-serif;
+	font-size: 8pt;
+        background-color: #c0e7b5;
+}
+
+/**********************************
+Main (side) menu    
+#4eba83
+**********************************/
+table.miniMenu {
+	border-style: solid;
+	 border-width: 1px; 
+	border-color: black;
+	}
+
+/* old: #dfd; */
+td.menuTitle {
+	background:  #c0e7b5; 
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+	font-weight: bold;
+	font-size: 12pt;
+}
+
+td.menuItem {
+	background: white;
+	font-weight: bold;
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+	 font-size: 10pt;
+}
+
+td.menuSubItem {
+	background: white;
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+	 font-size: 8pt;
+     
+}
+    
+/* This effect is not seen in IE. */
+td.menuItem:hover,  td.menuSubItem:hover {
+	background:  #ffd;
+}
+
+td.menuItem:hover,  td.menuSubItem:hover  {
+	background-color:  #f6deaf;
+	}
+    
+/* For IE to see */
+a:hover, a.menuItem:hover ,  td.menuSubItem:hover   {color: red;}
+
+td.help {background:  #ddf;
+	 font-family: Lucida Sans Unicode, Lucida, Geneva;
+	 font-weight: bold;
+	 font-size: 10pt;
+}
+a.help:hover  {color: red;}
+    
+/* This effect is not seen in IE. */
+td.help:hover {background:  #abc;}
+
+/**********************************
+Horizontal menus  
+#9bde91
+**********************************/
+table.hMenu {background:  white;
+        padding:  0px 0px 0px 0px;
+        margin: 0px 0px 5px 0px;
+        background: #c0e7b5;
+        width:100%;
+	font-size: 10pt;
+	border-style: solid;
+	border-width: 1px; 
+	border-color: black;
+}
+
+td.hMenu {background:  white;
+	padding:  0px 5px 0px 5px;
+        margin: 0px 0px 0px 0px;
+	font-family: Lucida Sans Unicode, Lucida, Geneva;
+	font-weight: bold;
+	font-size: 10pt;
+        background-color: #c0e7b5;
+}
+ 
+a.hMenu:hover  {
+	color: red;
+}
+
+td.hMenu:hover {
+	background-color:  #f6deaf;
+}
+        
+/**********************************
+Browser warning
+**********************************/
+.browserWarning {background:  red; 
+                font-size: 12pt; 
+                font-weight: bold;}
+    
+a.browserWarning:hover  {color: yellow;}
+
+
+
+.ht1  {font-size: 14pt; 
+	font-weight: bold;}
+
+.ht2 {font-size: 12pt; 
+	font-weight: bold;}
+	
+.ht3 {font-size: 10pt; 
+	font-weight: bold;}

@@ -1,0 +1,38 @@
+#!/usr/bin/python
+
+import os
+import sys
+import glob
+import re
+import GEAVars
+from GEADataHandler import insertCalibrationsData
+from GEATime import Time
+
+caldir = GEAVars.path.fileSys.geaData + "/data/cal/"
+
+if __name__=='__main__':
+
+    #Insert everything...
+
+    # insertCalibrationsData(aTime=None)
+
+    # WARNING: If you run this twice on the same input data you'll end up w/ multiple entries in the database.
+        
+    #Just today's stuff...
+    insertCalibrationsData(aTime=Time())
+
+    # insertCalibrationsData class uses CASI. CASI uses the old fashioned indexing scheme. Here we use
+    # ArchiveDataTool to move the old-style index to the new style compatable w/ the rest of GEA. It
+    # looks through all data directories for a missing, "index" file and creates one if it's missing.
+    # Dumb, but works.
+
+    dataDirs=[glob.glob("%s/20[0-9][0-9]/[0-1][0-9][0-3][0-9]" % caldir)]
+
+    for dir in dataDirs:
+        for d in dir:
+            if not os.path.isfile(d + "/index"):
+                print d + "/index needs done"
+                os.chdir(d)
+                os.system('ArchiveDataTool -v 1 -dir2index freq_directory index')
+
+    # The update_indices cron job will update the master_index file for us.

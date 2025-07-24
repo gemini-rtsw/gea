@@ -1,0 +1,29 @@
+#!/usr/bin/env python
+
+from GEAScheduled import DailyPlotter
+from GEAGeneral import util
+import GEAVars
+
+#List of modules whose 'gChannels' varialbe should be proccessed for genearting daily plots.
+if GEAVars.site=='MK':
+    gModules=['altairPage', 'iqPage', 'gmosPage', 'gnirsPage', 'niriPage', 'nifsPage', 'telescopePage', 'environmentPage', 'niriFocusPage']
+    #gModules=['iqPage']
+else:
+    gModules=['iqPage', 'gmosPage', 'trecsPage', 'seeingMonitorPage', 'telescopePage', 'environmentPage' ]
+
+#Base of where the modules should be found.
+gModBase='pages.engineering'
+
+def main():
+
+    dailyPlotter=DailyPlotter()
+
+    for modName in gModules:
+        module=util.deepImport(gModBase+'.'+modName)
+        GEAVars.outStream.write("\n*** Processing %s ***\n" % modName)
+        dailyPlotter.generatePlots(module.gChannels, overwrite=False)
+
+if __name__=='__main__':
+
+    main()
+

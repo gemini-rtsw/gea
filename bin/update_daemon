@@ -1,0 +1,78 @@
+#!/usr/bin/perl
+
+#
+# Update the engine config files, i.e., convert the text files
+# that describe what CA's to archive into XML files the ArchiveEngines understand.
+#
+
+BEGIN {
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use archiveconfig;
+use geautils qw(run $config $gea_base $gea_data $gea_root $gea_host $doall $nope);
+
+sub handle_daemon($)
+{
+    my ($d_name) = @_;
+
+    $daemonfile = "$gea_data$gea_root/$d_name/$d_name-daemon.xml";
+
+    print "Update deamon file $daemonfile\n";
+
+    if ($nope) {
+        open OUT, ">-"
+    }
+    else {
+        open OUT, ">$daemonfile" or die "Cannot open \"$daemonfile\"\n";
+    }
+
+    printf(OUT "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n");
+    printf(OUT "<!DOCTYPE daemon SYSTEM \"%s\">\n", $daemon_dtd);
+    printf(OUT "\n");
+    printf(OUT "<!-- \n");
+    printf(OUT "  NOTE:\n");
+    printf(OUT "  This file will be OVERWRITTEN\n");
+    printf(OUT "  with information from $config_name.\n");
+    printf(OUT "\n");
+    printf(OUT "  Change $config_name and re-run\n");
+    printf(OUT "  update_daemon\n");
+    printf(OUT "  -->\n");
+    printf(OUT "\n");
+    printf(OUT "<daemon>\n");
+    printf(OUT "  <port>%d</port>\n", $config->{daemon}{$d_name}{port});
+}
+
+sub handle_engine($$)
+{
+    my ($d_name, $e_name) = @_;
+
+    if (! is_localhost($config->{daemon}{$d_name}{engine}{$e_name}{run})) {
+	printf(OUT "    <!-- not running\n");
+    }
+    printf(OUT "  <engine directory='$e_name'>\n");
+    printf(OUT "    <desc>%s</desc>\n", $config->{daemon}{$d_name}{engine}{$e_name}{desc});
+    printf(OUT "    <port>%d</port>\n", $config->{daemon}{$d_name}{engine}{$e_name}{port});
+    printf(OUT "    <calist>%s</calist>\n", $config->{daemon}{$d_name}{engine}{$e_name}{calist});
+    printf(OUT "    <config>%s-group.xml</config>\n", $e_name);
+    if (length($config->{daemon}{$d_name}{engine}{$e_name}{restart}{type}) > 0) {
+        printf(OUT "    <restart type='%s'>%s</restart>\n",
+            $config->{daemon}{$d_name}{engine}{$e_name}{restart}{type},
+	    $config->{daemon}{$d_name}{engine}{$e_name}{restart}{content});
+	}
+        if (exists($config->{daemon}{$d_name}{engine}{$e_name}{dataserver}{host})) {
+	    printf(OUT "    <dataserver><host>%s</host></dataserver>\n",
+                $config->{daemon}{$d_name}{engine}{$e_name}{dataserver}{host});
+        }
+	printf(OUT "  </engine>\n");
+	if (! is_localhost($config->{daemon}{$d_name}{engine}{$e_name}{run})) {
+	    printf(OUT "    :: not running -->\n");
+	}
+}
+
+$doall = 1;
+
+run(\&handle_daemon, \&handle_engine);
+
+printf(OUT "</daemon>\n");
+close OUT;

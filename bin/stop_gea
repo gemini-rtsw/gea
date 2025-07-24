@@ -1,0 +1,28 @@
+#!/bin/bash
+
+. /etc/profile
+
+echo "Stopping gea"
+
+if [ "X$1" = "X-n" ]; then
+    PRETEND=-n
+    echo "Just pretending to start daemons."
+fi
+
+#
+# Politely stop all engines and daemons
+#
+
+stop_engine $PRETEND all
+stop_daemon $PRETEND all
+
+if [ "X$PRETEND" = "X-n" ]; then
+    sleep 1					# Wait for them to die.
+fi
+
+#
+# Just in case the above stop_engine or stop_daemon's didn't actually
+# stop anything, forceably kill them. Then remove their lockfiles, etc.
+#
+
+cleanup_daemon $PRETEND all

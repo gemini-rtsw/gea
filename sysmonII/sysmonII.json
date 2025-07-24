@@ -1,0 +1,1200 @@
+{
+ "verbose": 4,
+ "doemail": true,
+ "emailfreq": 60,
+ "systems": {
+ "emily": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Chiller Flow - <b><font color=\"red\">UNDER TEST</font></b>",
+   "monitor": [
+    {
+     "pvname": "ao:sad:wfcs:heartBeat.VAL",
+     "description": "Test stuff",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "heartbeat": 2147483648,
+      "rate": 1.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "ao:heartBeatOut.VAL",
+     "description": "Test stuff",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "heartbeat": 2147483648,
+      "rate": 1.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "MTEST:fooA",
+     "description": "Test stuff",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 9.0,
+      "high": 125.0
+     },
+     "options": {"nightonly":true}
+    },
+
+    {
+     "pvname": "MTEST:fooB",
+     "description": "Test stuff",
+     "filter": {
+      "average": "seconds=2"
+     },
+     "trigger": {
+      "low": -13.0,
+      "high": -5.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "MTEST:fooC",
+     "description": "Test stuff",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "high": 13.0
+     },
+     "options": null
+    }
+   ]
+  },
+"test": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Chiller Flow - <b><font color=\"red\">UNDER TEST</font></b>",
+   "monitor": [
+
+    {
+     "pvname": "MTEST:fooA",
+     "description": "Test stuff",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 75.0,
+      "high": 125.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "MTEST:fooB",
+     "description": "Test stuff",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 55.0,
+      "high": 195.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "MTEST:fooC",
+     "description": "Test stuff",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": -13.0,
+      "high": -5.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "prch2": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Chiller Flow - <b><font color=\"red\">UNDER TEST</font></b>",
+   "monitor": [
+    {
+     "pvname": "pr:ch2:extFlowOut",
+     "description": "FM62 Chiller 2 Flow Out",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 75.0,
+      "high": 125.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:ch2:extTempOut",
+     "description": "TT61 Chiller 2 Temperature Out",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": -13.0,
+      "high": -5.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "ecs": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "pr:waterGallons",
+     "description": "Gallons of domestic water",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 4300.0,
+      "high": 10000.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:elec:helcoPwr",
+     "description": "On helco power",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": "OFF"
+     },
+     "options": {}
+    },
+    {
+     "pvname": "ec:botShtrSkew",
+     "description": "Skew",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": -16.0,
+      "high": 16.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "prch1": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Chiller Flow - <b><font color=\"red\">UNDER TEST</font></b>",
+   "monitor": [
+    {
+     "pvname": "pr:Chiller1Flow",
+     "description": "Flow",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 100.0,
+      "high": 150.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:ch:c1to",
+     "description": "Temperature",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": -13.0,
+      "high": -5.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "altair": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "ao:temp1.VAL",
+     "description": "DM temp",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": -0.3,
+      "high": 10.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "ao:temp2.VAL",
+     "description": "Heat Exchanger Air Inlet",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 0.0,
+      "high": 17.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "ao:wfcs:getStatus4.VALL",
+     "description": "WFS",
+     "filter": {
+      "slope": "hours=5"
+     },
+     "trigger": {
+      "low": -29.0,
+      "high": -5.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "ao:wfcs:getStatus4.VALM",
+     "description": "WFS Controller",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": -15.0,
+      "high": 21.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "ao:strapDevStatus.VALF",
+     "description": "STRAP Temperature",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": -13.0,
+      "high": -7.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "sfo:ccdTemp",
+     "description": "SFO CCD Temperature",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": -45.0,
+      "high": -35.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "ao:wfcs:xPatchIn",
+     "description": "X Patch",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": -0.1,
+      "high": 0.5
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "ao:wfcs:yPatchIn",
+     "description": "Y Patch",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": -0.55,
+      "high": -0.3
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "altairgate.existTestRate",
+     "description": "Epics Channel Access UDP Load",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 0.0,
+      "high": 500.0
+     },
+     "options": {}
+    }
+   ]
+  },
+  "gmos": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "gm:dc:ls336:IN1",
+     "description": "Gmos temperature (C)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": -110.0,
+      "high": -90.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "gm:cc:temp6",
+     "description": "SCI CCD controller case (temp6)",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 5.0,
+      "high": 25.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "gm:cc:temp1",
+     "description": "WFS CCD controller case (temp1)",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": -3.0,
+      "high": 8.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "gm:cc:grConfigZpcGRA",
+     "description": "",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 148.0,
+      "high": 168.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "gm:cc:grConfigZpcGRB",
+     "description": "",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 140.0,
+      "high": 160.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "gm:cc:grConfigZpcGRC",
+     "description": "",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 140.0,
+      "high": 160.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "gm:cc:grConfigZpcGRD",
+     "description": "",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 140.0,
+      "high": 160.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    }
+   ]
+  },
+  "gnirs": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "nirs:sad:cc:cryo1_1s",
+     "description": "Cryo1_1s First Stage",
+     "filter": {
+      "slope": "samples=5"
+     },
+     "trigger": {
+      "low": 35.0,
+      "high": 49.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:cryo2_1s",
+     "description": "Cryo2_1s First Stage",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 35.0,
+      "high": 49.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:cryo2_2s",
+     "description": "Cryo2_2s Second Stage",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 30.0,
+      "high": 38.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:cryo3_1s",
+     "description": "Cryo3_1s First Stage",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 35.0,
+      "high": 49.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:cryo4_1s",
+     "description": "Cryo4_1s First Stage",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 35.0,
+      "high": 49.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:thermalBusBarS",
+     "description": "Thermal Bus Bar Starboard",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 40.0,
+      "high": 60.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:thermalBusBarP",
+     "description": "Thermal Bus Bar Port",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 45.0,
+      "high": 64.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:molSieve",
+     "description": "Molecular Sieve",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 33.0,
+      "high": 37.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:tc:btc:sensorA",
+     "description": "Bench Temperature Channel A",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 59.0,
+      "high": 63.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:tc:btc:sensorB",
+     "description": "Bench Temperature Channel B",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 59.0,
+      "high": 63.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:dc:C1Tmp",
+     "description": "Science Detector Temp",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 26.0,
+      "high": 33.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:dc:C1.SETP",
+     "description": "Array Temp Setpoint",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 28.0,
+      "high": 30.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "nirs:sad:cc:pressureIG",
+     "description": "Dewar IG Vacuum",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 0.0,
+      "high": 9e-07
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nirs:sad:cc:pressureTC2",
+     "description": "Dewar TC Vacuum",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+     "high": 200.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "gws": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "GWS has gone online on sysMonitor 5/24/2012. Dust monitor enabled.",
+   "monitor": [
+    {
+     "pvname": "ws:cfTemp",
+     "description": "Temperature",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+     "high": 200.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "ws:cfHumid",
+     "description": "Humidity",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+     "high": 200.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "ws:cfPress",
+     "description": "Pressure",
+     "filter": {
+      "null": true
+     },
+     "trigger":  {
+        "high":200
+    },
+     "options": null
+    },
+    {
+     "pvname": "ws:cfWindDir",
+     "description": "Wind Direction",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+        "high":200
+      },
+     "options": null
+    },
+    {
+     "pvname": "ws:cfWindSpeed",
+     "description": "Wind Speed",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+       "high": 500.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "ws:tpPmPxChan1",
+     "description": "Dust",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "high": 50000.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "nifs": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "nifs:eng:tmpC3Tmp",
+     "description": "NIFS Detector Temp (K)",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 60.0,
+      "high": 68.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "nifs:eng:tmpC4Tmp",
+     "description": "NIFS Detector Housing Temp. (K)",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 57.0,
+      "high": 63.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "nifs:eng:tmpC1Tmp",
+     "description": "NIFS CWS Temp. (K)",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 62.0,
+      "high": 68.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "nifs:eng:tmpC2Tmp",
+     "description": "NIFS OIWFS Detector Temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 67.0,
+      "high": 73.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "nifs:eng:tmpS1Tmp3",
+     "description": "NIFS ColdHead-2 2S Bottom Strap (K)",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 0.0,
+      "high": 15.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "nifs:eng:tmpCool.BUSY",
+     "description": "Cryocooler state",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": "Off"
+     },
+     "options": {
+      "noLink": true
+     }
+    }
+   ]
+  },
+  "niri": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "niri:dc:footLGain",
+     "description": "Actual foot temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 32.0,
+      "high": 36.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpC2Tmp",
+     "description": "Image mass buffer (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 27.0,
+      "high": 30.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpC1Tmp",
+     "description": "OIWFS temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 66.0,
+      "high": 69.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpC3Tmp",
+     "description": "Cold plate center temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 64.0,
+      "high": 67.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpS1Tmp5",
+     "description": "CC cabinet temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 273.0,
+      "high": 293.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpS1Tmp6",
+     "description": "DC cabinet temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 273.0,
+      "high": 290.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpS1Tmp1",
+     "description": "Top strap temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 52.0,
+      "high": 68.0
+     },
+     "options": {
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "niri:eng:tmpS1Tmp3",
+     "description": "Cryopump temp. (K)",
+     "filter": {
+      "slope": "seconds=2"
+     },
+     "trigger": {
+      "low": 8.0,
+      "high": 16.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "niri:eng:tmpCool.BUSY",
+     "description": "Cryocooler state",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": "Off"
+     },
+     "options": {
+      "noLink": true
+     }
+    },
+    {
+     "pvname": "niri:dc:sad:health.VAL",
+     "description": "DC health",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "exact": "GOOD"
+     },
+     "options": {
+      "noLink": true,
+      "noAlarm": true
+     }
+    },
+    {
+     "pvname": "niri:cc:health.VAL",
+     "description": "CC health",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "exact": "GOOD"
+     },
+     "options": {
+      "noLink": true,
+      "noAlarm": true
+     }
+    }
+   ]
+  },
+  "pr1": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Left Compressor",
+   "monitor": [
+    {
+     "pvname": "pr:helium1supply",
+     "description": "Left compressor rack supply",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 270.0,
+      "high": 310.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:helium1return",
+     "description": "Left compressor rack return",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 73.0,
+      "high": 105.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "pr2": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Right Compressor",
+   "monitor": [
+    {
+     "pvname": "pr:helium2supply",
+     "description": "Right compressor rack supply",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 275.0,
+      "high": 310.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:helium2return",
+     "description": "Right compressor rack return",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 73.0,
+      "high": 105.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "pr4": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Island Compressor",
+   "monitor": [
+    {
+     "pvname": "pr:helium4supply",
+     "description": "Island compressor rack supply",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 275.0,
+      "high": 310.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:helium4return",
+     "description": "Island compressor rack return",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 73.0,
+      "high": 105.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "prfc": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "comment": "Plant Room Chiller Flow",
+   "monitor": [
+    {
+     "pvname": "pr:fcOutFlow",
+     "description": "FM50 Fluid Cooler Flow",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 25.0,
+      "high": 55.0
+     },
+     "options": null
+    },
+    {
+     "pvname": "pr:heSupplyTemp",
+     "description": "TT52 Fluid Cooler Temperature - sensor located in wind tunnel above CP8",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "low": 10.0,
+      "high": 26.0
+     },
+     "options": null
+    }
+   ]
+  },
+  "rtems": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "cr:iocStats:SUSP_TASK_CNT",
+     "description": "CRCS Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {
+      "noLink": true
+     }
+    },
+    {
+     "pvname": "gc:iocStats:SUSP_TASK_CNT",
+     "description": "GCAL Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {
+      "noLink": true
+     }
+    },
+    {
+     "pvname": "gis:iocStats:SUSP_TASK_CNT",
+     "description": "GIS Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m1:iocStats:SUSP_TASK_CNT",
+     "description": "PCS Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {
+      "noLink": true
+     }
+    },
+    {
+     "pvname": "m2:iocStats:SUSP_TASK_CNT",
+     "description": "SCS Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "mc:iocStats:SUSP_TASK_CNT",
+     "description": "MCS Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {
+      "noLink": true
+     }
+    },
+    {
+     "pvname": "tcs:iocStats:SUSP_TASK_CNT",
+     "description": "TCS Suspended Tasks",
+     "filter": {
+      "null": true
+     },
+     "trigger": {
+      "not": 0
+     },
+     "options": {}
+    }
+   ]
+  },
+  "scs": {
+   "notify": "tcumming@gemini.edu tcumming@gemini.edu",
+   "monitor": [
+    {
+     "pvname": "m2:status.VALE",
+     "description": "CEM Temperature",
+     "filter": {
+      "average": "seconds=5"
+     },
+     "trigger": {
+      "high": 20.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m2:act1Diag.VALC",
+     "description": "Actuator 0 current",
+     "filter": {
+      "average": "seconds=2"
+     },
+     "trigger": {
+      "low": -2.0,
+      "high": 1.2
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m2:act2Diag.VALC",
+     "description": "Actuator 1 current",
+     "filter": {
+      "average": "minutes=2"
+     },
+     "trigger": {
+      "low": -2.0,
+      "high": 1.2
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m2:act3Diag.VALC",
+     "description": "Actuator 2 current",
+     "filter": {
+      "average": "hours=2"
+     },
+     "trigger": {
+      "low": -2.0,
+      "high": 1.2
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m2:posDrift0.VAL",
+     "description": "Actuator 0 MicroE Drift",
+     "filter": {
+      "average": "seconds=2"
+     },
+     "trigger": {
+      "low": -70.0,
+      "high": 70.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m2:posDrift1.VAL",
+     "description": "Actuator 1 MicroE Drift",
+     "filter": {
+      "average": "seconds=2"
+     },
+     "trigger": {
+      "low": -70.0,
+      "high": 70.0
+     },
+     "options": {}
+    },
+    {
+     "pvname": "m2:posDrift2.VAL",
+     "description": "Actuator 2 MicroE Drift",
+     "filter": {
+      "average": "seconds=2"
+     },
+     "trigger": {
+      "low": -80.0,
+      "high": 70.0
+     },
+     "options": {}
+    }
+   ]
+  }
+ }
+}

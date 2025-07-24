@@ -1,0 +1,48 @@
+#!/usr/bin/perl
+
+#
+# Sample code to show how to use geautils package.
+#
+
+BEGIN {
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use archiveconfig;
+use geautils qw(run $config $gea_base $gea_data $gea_root $debug $doall $nope);
+
+$doall = 1;
+
+sub handle_daemon($)
+{
+    my ($d_name) = @_;
+}
+
+sub handle_engine($$)
+{
+    my ($d_name, $e_name) = @_;
+
+    print("cd $gea_data$gea_root/$d_name/$e_name\n") if $debug | $nope;
+    chdir("$gea_data$gea_root/$d_name/$e_name") unless $nope;
+    my $cmd = "rm -f archive_active.lck";
+    print("$cmd\n") if $debug | $nope;
+    system("$cmd") unless $nope;
+}
+
+run(\&handle_daemon, \&handle_engine);
+
+#
+# Use "ps -fea" command to find all programs called, "Archiver" something and kill it.
+#
+
+my $cmd = "ps -fea";
+open(PS, "$cmd|") or die "Cannot run ps";
+while (<PS>) {
+   if (/Archiver/) {
+       /([0-9]+)/;			# Grab first column that is all numbers.
+       $pid = $1;
+       my $cmd = "kill -KILL $pid";
+       print("$cmd\n") if $debug | $nope;
+       system("$cmd") unless $nope;
+   }
+}

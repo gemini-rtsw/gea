@@ -1,0 +1,49 @@
+#!/usr/bin/perl
+
+#
+# Update the engine config files, i.e., convert the text files
+# that describe what CA's to archive into XML files the ArchiveEngines understand.
+#
+
+BEGIN {
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use archiveconfig;
+use geautils qw(run $config $gea_base $gea_conf $gea_data $gea_root $gea_host $doall $nope);
+
+sub handle_daemon($)
+{
+    my ($d_name) = @_;
+
+    print "Daemon: $gea_data$gea_root/$d_name\n";
+}
+
+sub handle_engine($$)
+{
+    my ($d_name, $e_name) = @_;
+
+    my $enginedtd  = "$gea_base/doc/dtd/engineconfig.dtd";
+    my $outdir     = "$gea_data$gea_root/$d_name/$e_name";
+    my $cnfg       = "$e_name.cnfg";
+    my $siteconfig = "$e_name.$ENV{GEMINI_SITE}.cnfg";
+    my $indir      = "$gea_conf/config/$e_name";
+	  
+    print("   Engine $e_name\n") if $debug;
+
+    #
+    # Merge in optional site specific configuration data.
+    #
+    if (-f "$indir/$siteconfig" ) {
+        my $cmd = "cat $indir/$cnfg  $indir/$siteconfig > $indir/generated.$e_name.cnfg";
+        system($cmd) unless $nope;
+        print($cmd, "\n") if $debug | $nope;
+        $cnfg="generated.$e_name.cnfg";
+    }	 	
+
+    my $cmd = "ConvertEngineConfig -v -d $enginedtd -o $outdir/$e_name-group.xml $indir/$cnfg";
+    system($cmd) unless $nope;
+    print($cmd, "\n") if $debug | $nope;
+}
+
+run(\&handle_daemon, \&handle_engine);

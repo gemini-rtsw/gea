@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Get the input directory name from the command line
+input_directory="$1"
+
+# Navigate to the specified directory
+cd /gemsoft/var/data/gea/data/data/"$input_directory" || exit
+
+# Remove i.xml and all .lck files
+rm i.xml *.lck m
+
+# Modify indexconfig.xml and save the changes to i.xml
+cat indexconfig.xml | sed "s/^[ ]\+[^:]\+: '\([^ ]\+\)'.\+/ <archive><index>\1<\/index><\/archive>/" > i.xml
+
+# Run ArchiveIndexTool with verbose output and redirect the output to m.log
+ArchiveIndexTool -verbose 1 i.xml m > m.log 2>&1
+
+# Rename 'm' to 'master_index'
+mv m master_index
+

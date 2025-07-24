@@ -1,0 +1,37 @@
+#!/usr/bin/perl
+
+#
+# Sample code to show how to use geautils package.
+#
+
+BEGIN {
+    push(@INC, "$ENV{'GEA_BASE'}/lib");
+}
+
+use archiveconfig;
+use geautils qw(run $config $gea_base $gea_data $gea_root $gea_host $debug $doall $nope);
+
+$doall = 1;
+
+sub handle_daemon($)
+{
+    my ($d_name) = @_;
+
+    my $port = $config->{daemon}{$d_name}{port};
+
+    print("read url: http://$gea_host:$port/stop\n") if $debug | $nope;
+
+    if (! $nope) {
+        my @doc = read_URL($gea_host, $port, "stop");
+        print join("\n", @doc) if $debug;
+    }
+ 
+    # Used to this, but there's no, "lynx" command on this system: system("lynx -dump http://$gea_host:$port/stop") unless $nope;
+}
+
+sub handle_engine($$)
+{
+    my ($d_name, $e_name) = @_;
+}
+
+run(\&handle_daemon, \&handle_engine);

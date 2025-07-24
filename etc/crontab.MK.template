@@ -1,0 +1,27 @@
+EPICS_BASE=$EPICS_BASE
+EPICS_CA_ADDR_LIST=$EPICS_CA_ADDR_LIST
+GEA_BASE=$GEA_BASE
+GEA_CONF=$GEA_CONF
+GEA_DATA=$GEA_DATA
+GEA_HOST=$GEA_HOST
+GEA_TMP=$GEA_TMP
+GEA_LOG=$GEA_LOG
+GEA_VERSION=$GEA_VERSION
+GEA_RELEASE=$GEA_RELEASE
+GEMINI_SITE=$GEMINI_SITE
+GEMINI_TOP=$GEMINI_TOP
+PATH=$PATH
+PYTHONPATH=$PYTHONPATH
+#
+# min	hour	day	month	weekday	command
+30      7       *       *       *       dailyPlotsGen >> $GEA_LOG/dailyPlotsGen.log 2>&1
+*/1     18-23   *       *       *       m1SurfacePlotsGen.py >> $GEA_LOG/m1SurfacePlotsGen.log 2>&1
+*/1     0-5     *       *       *       m1SurfacePlotsGen.py >> $GEA_LOG/m1SurfacePlotsGen.log 2>&1
+0       6       *       *       *       m1Animate.py >> $GEA_LOG/m1Animate.log 2>&1
+55      6       *       *       *       nice -18 cleanup_tmp
+*/2     *       *       *       *       ecsLoggerChecker.sh
+*/2     *       *       *       *       systemMonitor.py >> $GEA_LOG/sysMon.log 2>&1
+30      19      *       *       *       calInserter >> $GEA_LOG/calInserter.log 2>&1
+*/15    *       *       *       *       nice -18 update_indices >> $GEA_LOG/ArchiveIndex.log 2>&1
+*/15    *       *       *       *       cd /gemsoft/opt/gea/watcher  ; ./keeprunning.sh
+*/15    *       *       *       *       cd /gemsoft/opt/gea/sysmonII ; ./keeprunning.sh

@@ -1,0 +1,3 @@
+sideMenu.js creates menus on the left hand side of GEA pages. writeMenu()
+javascript function is called to paint the menu. menuCreator.py should
+be used to create sideMenu.js, do not modify sideMenu.js!

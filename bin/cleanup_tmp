@@ -1,0 +1,25 @@
+#!/bin/bash
+
+. /etc/profile
+
+#
+# This script is a placeholder for any periodic cleanup that needs to be done.
+#
+
+#
+# Delete any image files that are 90 days old.
+#
+
+find $GEA_DATA/wwwdata/m1SurfacePlots -ctime +90 -a -name "*.png" -delete -print
+
+#
+# Delete any movie files that are 120 days old.
+#
+
+find $GEA_DATA/wwwdata/m1SurfacePlots -ctime +120 -a -name "*.mpeg" -delete -print
+
+#
+# Delete data and image files in root of $GEA_TMP a couple days old.
+#
+
+find $GEA_DATA/wwwdata -maxdepth 1 -ctime +2 -a \( -name "image.*" -o -name "data.*" \) -delete -print

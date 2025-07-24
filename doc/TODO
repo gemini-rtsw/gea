@@ -1,0 +1,43 @@
+fill out cahnnel selections
+fillout daily plots for geasouth components..
+investigate problems with missing data..
+iq (based on maxime's detailed info)..
+sector division in m1 surface plots/animations.. 
+laterals pcs
+gis pressures; analysis..
+get trecs page working; fix BinError issue; investigate data stored as str..
+general pages cleanup.. add FORMAT=spreadsheet where appropriate..
+config cleanup
+pcs leak plot
+add ability to list channels from a pattern..
+use array acutator data for surface plots/animations... 
+implement 'stepped' plotting…
+cookies/sessions;support for passwords
+graphs/histograms of remedy data (time lost, observed etc...)
+frs summary with Section/Category/SubCategory links
+animations; display a 'howto' guide for installing  codecs on windoze, investigate other options..
+add user notification that things may not work if old browsers are used.
+major documentation updates needed…
+general cleanup of GEAPlot module.. ; upate to newer version of matplotlib
+geasouth seeing page; use "remote forwarding"
+xml-rpc support for GEARemedy; would eliminate need for current setup "forwarding" setup.
+ability to modify fault reports
+faults per user with higlighting
+sort out local time stamps on 'work done' entries (talk to simon)
+real time section; define (health) rt channels for all systems..
+add zooming in plots
+mod_python; look into caching.. sessions..
+optimize use of psyco..
+custom announcements.. one for each page..
+sort out caRepeater issue on geasouth
+update channel selection code to allow more flexibility in definitions.. 
+use /tmp dir for temp storage (simplifies mounting)..
+update daily plot generation scripts to simplify adding new daily plots and simplify accouting for differences between north/south
+Handle repeats when dealing with data..
+update NL page to use newer GEATime.Time; implement consistant time settings..
+move m1Surface plots into /data
+
+new version archiver
+x/y plots
+scaling
+plots 8pm/8am by default on 1st link
