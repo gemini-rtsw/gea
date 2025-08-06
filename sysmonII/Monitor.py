@@ -130,7 +130,7 @@ class Monitor:
     except MonitorException as e:
       self.message = "Monitor Filter Exception \"%s\"." % e
 
-    if not self.fltval: return		# Not enough values yet, come back later.
+    if self.fltval is None: return		# Not enough values yet, come back later.
 
     try:
       self.trigger()
