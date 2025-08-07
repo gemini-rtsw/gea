@@ -344,7 +344,12 @@ class Monitor:
           except:
             log.info("EMAIL SEND FAILED {0} Retry: {1}".format(msg['To'], self.pvname, N))
             time.sleep(2)
-        time.sleep(900) 		#Wait 15 minutes, if no one has acknowledged it, send another email
+
+        for M in range(900 // 30): #Check every 30 seconds for 15 minutes
+          if not self.system.acknowledge:
+            break
+          time.sleep(5)
+
 
       #Once out of the while loop, it means the alert has been acknowledged. Send another email to let people know
       msg2 = MIMEMultipart('alternative')
