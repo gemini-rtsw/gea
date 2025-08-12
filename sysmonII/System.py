@@ -22,5 +22,6 @@ class System:
     self.comment  = sysconf['comment']        if 'comment'     in sysconf else None
     self.emailenable = False
     self.acknowledge = False
+    self.ackCnt = 0
     self.monitors = []
 

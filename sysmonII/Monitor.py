@@ -287,8 +287,9 @@ class Monitor:
 
   def notify(self, failed):
 
-    if failed == self.failed:
-      return						# Do noting if no change
+   # if failed == self.failed:
+   #   return						# Do noting if no change
+    
     self.failed = failed
 
     # Debugging...
@@ -298,41 +299,44 @@ class Monitor:
     if self.system.emailenable == None: log.info("NO EMAIL because emails disabled for this system from the webpage %s" % self.pvname)
     if self.system.notify == None:      log.info("NO EMAIL because the notify list is empty %s" % self.pvname)
 
-    if ( failed                           and
+    if (( failed                           and
          self.doemail == True             and
          'noAlarm' not in self.options    and
          self.system.notify               and
-         self.system.emailenable):
+         self.system.emailenable) or self.system.acknowledge):
 
-      msg = MIMEMultipart('alternative')
-      msg['Subject'] = "sysMon: Triggered for %s" % self.cache.pvname
-      msg['From']    = 'noreply@gemini.edu'
-      msg['To']      = self.system.notify.replace(" ", ", ")
-      report  = "<html>\n"
-      report += " <body>\n"
-      report += "  <h1> System Monitor Triggered </h1>\n"
-      report += "    <p> If you resolved this and re-enabled the alarm, or this appears to be a serious issue, please reply to ths email with a summary of your findings. Another alert will be sent every 15 minutes until this issue is acknowledged. To acknowledge this alert, go to sysmon and click the Acknowledge button next to the affected system. </p>"
-      report += "  <table>"
-      report += "   <tr>"
-      report += "    <td> system:  <td> %s" % self.system.sysname
-      report += "   <tr>"
-      report += "    <td> pv:      <td> <a target=\"_parent\" href=\"%s\">%s</a>" % (self.geaurl, self.pvname)
-      report += "   <tr>"
-      report += "    <td> value:   <td> %s" % self.fltval
-      report += "   <tr>"
-      report += "    <td> filter:  <td> %s" % self.fltconf
-      report += "   <tr>"
-      report += "    <td> trigger: <td> %s" % self.trgconf
-      report += "   <tr>"
-      report += "    <td> time stamp: <td> %s" % datetime.now()
+      self.system.ackCnt = (self.system.ackCnt) % 900
+	  
+      if (self.system.ackCnt == 1):
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = "sysMon: Triggered for %s" % self.cache.pvname
+        msg['From']    = 'noreply@gemini.edu'
+        msg['To']      = self.system.notify.replace(" ", ", ")
+        report  = "<html>\n"
+        report += " <body>\n"
+        report += "  <h1> System Monitor Triggered </h1>\n"
+        report += "    <p> If you resolved this and re-enabled the alarm, or this appears to be a serious issue, please reply to ths email with a summary of your findings. Another alert will be sent every 15 minutes until this issue is acknowledged. To acknowledge this alert, go to sysmon and click the Acknowledge button next to the affected system. </p>"
+        report += "  <table>"
+        report += "   <tr>"
+        report += "    <td> system:  <td> %s" % self.system.sysname
+        report += "   <tr>"
+        report += "    <td> pv:      <td> <a target=\"_parent\" href=\"%s\">%s</a>" % (self.geaurl, self.pvname)
+        report += "   <tr>"
+        report += "    <td> value:   <td> %s" % self.fltval
+        report += "   <tr>"
+        report += "    <td> filter:  <td> %s" % self.fltconf
+        report += "   <tr>"
+        report += "    <td> trigger: <td> %s" % self.trgconf
+        report += "   <tr>"
+        report += "    <td> time stamp: <td> %s" % datetime.now()
 
-      report += "  </table>"
-      report += " </body>\n"
-      report += "</html>\n"
-      msg.attach(MIMEText(report, 'html'))
+        report += "  </table>"
+        report += " </body>\n"
+        report += "</html>\n"
+        msg.attach(MIMEText(report, 'html'))
 
-      self.system.acknowledge = True
-      while self.system.acknowledge:
+        self.system.acknowledge = True
+        # while self.system.acknowledge:
         for N in range(1, 5):					# Try four times to send the email. See FR-72397
           try:
             s = smtplib.SMTP('hbfsmtprelay-lv1')
@@ -344,7 +348,12 @@ class Monitor:
           except:
             log.info("EMAIL SEND FAILED {0} Retry: {1}".format(msg['To'], self.pvname, N))
             time.sleep(2)
-        time.sleep(900) 		#Wait 15 minutes, if no one has acknowledged it, send another email
+        #time.sleep(900) 		#Wait 15 minutes, if no one has acknowledged it, send another email
+
+
+
+
+    if not self.system.acknowledge and self.system.ackCnt > 0:
 
       #Once out of the while loop, it means the alert has been acknowledged. Send another email to let people know
       msg2 = MIMEMultipart('alternative')
@@ -370,33 +379,6 @@ class Monitor:
           log.info("EMAIL SEND FAILED {0} Retry: {1}".format(msg2['To'], self.pvname, N))
           time.sleep(2)
           
-
-
-
-    msg = {"type":    "alert",
-           "failed":  failed,				# Build up rabbitmq msg
-           "system":  self.system.sysname,
-           "pv":      self.pvname,
-           "value":   self.fltval,
-           "filter":  self.fltconf,
-           "trigger": self.trgconf }
-
-    try:
-      cred = pika.PlainCredentials('gea', 'gea')
-      con  = pika.BlockingConnection( pika.ConnectionParameters('localhost', 5672, '/', cred))
-      ch   = con.channel()
-    except:
-      try: con.close()	# Make half-hearted attempt to close just in case.
-      except: pass
-      log.info("IPC MSG SEND FAILED {0} {1}".format(msg['To'], self.pvname))
-      return	# No network, nothing we can do.
-
-    msg  = json.dumps(msg)
-
-    ch.exchange_declare(exchange='sysmon', exchange_type='fanout')
-    ch.basic_publish(exchange='sysmon', routing_key='', body = msg)
-
-    con.close()
 
 
 
