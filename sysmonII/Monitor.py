@@ -354,7 +354,7 @@ class Monitor:
 
 
     if not self.system.acknowledge and self.system.ackCnt > 0:
-
+      self.system.ackCnt = 0
       #Once out of the while loop, it means the alert has been acknowledged. Send another email to let people know
       msg2 = MIMEMultipart('alternative')
       msg2['Subject'] = "sysMon: Acknowledged for %s" % self.cache.pvname
