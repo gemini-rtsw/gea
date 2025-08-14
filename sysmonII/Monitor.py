@@ -305,7 +305,8 @@ class Monitor:
          self.system.notify               and
          self.system.emailenable) or self.system.acknowledge):
 
-      self.system.ackCnt = (self.system.ackCnt) % 900
+      self.system.ackCnt = (self.system.ackCnt % 900) + 1
+      self.system.acknowledge = True
 	  
       if (self.system.ackCnt == 1):
         msg = MIMEMultipart('alternative')
@@ -335,7 +336,6 @@ class Monitor:
         report += "</html>\n"
         msg.attach(MIMEText(report, 'html'))
 
-        self.system.acknowledge = True
         # while self.system.acknowledge:
         for N in range(1, 5):					# Try four times to send the email. See FR-72397
           try:
