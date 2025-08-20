@@ -312,7 +312,7 @@ class Monitor:
       self.system.ackCnt = (self.system.ackCnt % 2000) + 1
       self.system.acknowledge = True
 	  
-      if (self.lastTime is none) or (newTime - self.lastTime >= timedelta(minutes=15)):
+      if (self.lastTime is None) or (newTime - self.lastTime >= timedelta(minutes=15)):
         self.lastTime = newTime
         msg = MIMEMultipart('alternative')
         msg['Subject'] = "sysMon: Triggered for %s" % self.cache.pvname
