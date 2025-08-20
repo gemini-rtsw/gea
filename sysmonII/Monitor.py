@@ -17,6 +17,7 @@ from email.mime.text import MIMEText
 from PIL import Image, ImageDraw
 from Cache import pvType
 from datetime import datetime
+from datetime import timedelta
 
 import logging
 log = logging.getLogger("sysmonII")
