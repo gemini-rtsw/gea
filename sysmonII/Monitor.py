@@ -54,6 +54,7 @@ class Monitor:
     self.doemail  = None
     self.message  = None			# If anything fails, put a message here (and trigger code will not be called). Else None
     self.fltval   = None			# If filtering succeeds, put value here (and call the trigger code). Else None
+    self.lastTime = None
     self.trgconf  = monconf['trigger']
     self.trigger  = self.unknownTrigger
     try:
@@ -303,12 +304,16 @@ class Monitor:
          self.doemail == True             and
          'noAlarm' not in self.options    and
          self.system.notify               and
-         self.system.emailenable) or self.system.acknowledge):
-
-      self.system.ackCnt = (self.system.ackCnt % 900) + 1
+         self.system.emailenable          and
+         not self.system.acknowledge) or 
+         (self.system.acknowledge and 
+         self.lastTime is not None)):
+      newTime = datetime.now()
+      self.system.ackCnt = (self.system.ackCnt % 2000) + 1
       self.system.acknowledge = True
 	  
-      if (self.system.ackCnt == 1):
+      if (self.lastTime is none) or (newTime - self.lastTime >= timedelta(minutes=15)):
+        self.lastTime = newTime
         msg = MIMEMultipart('alternative')
         msg['Subject'] = "sysMon: Triggered for %s" % self.cache.pvname
         msg['From']    = 'noreply@gemini.edu'
@@ -353,17 +358,18 @@ class Monitor:
 
 
 
-    if not self.system.acknowledge and self.system.ackCnt > 0:
+    if not self.system.acknowledge and self.system.ackCnt > 0 and self.lastTime is not None: 
       self.system.ackCnt = 0
+      self.lastTime = None
       #Once out of the while loop, it means the alert has been acknowledged. Send another email to let people know
       msg2 = MIMEMultipart('alternative')
-      msg2['Subject'] = "sysMon: Acknowledged for %s" % self.cache.pvname
+      msg2['Subject'] = "sysMon: Acknowledged for %s %s" % (self.system.sysname, self.pvname)
       msg2['From']    = 'noreply@gemini.edu'
       msg2['To']      = self.system.notify.replace(" ", ", ")
       report2  = "<html>\n"
       report2 += " <body>\n"
       report2 += "  <h1> System Monitor Acknowledged</h1>\n"
-      report2 += "    <p> The alert has been acknowledged. </p>"
+      report2 += "    <p> The alert has been acknowledged. Please remember to re-enable. </p>"
       report2 += " </body>\n"
       report2 += "</html>\n"
       msg2.attach(MIMEText(report2, 'html'))
