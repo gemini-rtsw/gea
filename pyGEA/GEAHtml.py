@@ -2240,6 +2240,11 @@ HTMLOptionsNLNightly
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
             </td>
             
@@ -2841,6 +2846,11 @@ class HTMLFormFrs(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
 
               <input TYPE=submit VALUE="Update">
@@ -3054,6 +3064,11 @@ class HTMLFormFrsOLD(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
         
               <input TYPE=submit VALUE="Update">
@@ -3769,6 +3784,11 @@ class HTMLTimeSelector(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
             </td>
             <td>
@@ -4020,6 +4040,11 @@ class HTMLTimeSelector(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
             </td>
             <td><select NAME=%(ENDHOUR)s SIZE=1 onChange="HTMLTimeSelector_onChangeUpdate%(JS)s(); return false;">
@@ -4380,6 +4405,11 @@ class HTMLTimeSelectorSimple(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
             </td>
             <td class="widgetTimeLabel" align="center"> End %(UTC)s: </td>
@@ -4452,6 +4482,11 @@ class HTMLTimeSelectorSimple(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
                 </select>
             </td>
           </tr>
@@ -5476,6 +5511,11 @@ class HTMLTimeSelectorNL(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
             </td>
       </tr>
@@ -5654,6 +5694,11 @@ class HTMLTimeSelectorFrsStatsOLD(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select>
             </td>
             <td align="center"> Time (h:m:s) </td>
@@ -5884,6 +5929,11 @@ class HTMLTimeSelectorFrsStatsOLD(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select> </td>
             <td align="center"> Time (h:m:s) </td>
             <td>
@@ -6252,6 +6302,11 @@ class HTMLTimeSelectorDiq(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select> </td>
             <td align="center"> Time (h:m:s) </td>
             <td width="175">
@@ -6479,6 +6534,11 @@ class HTMLTimeSelectorDiq(HTMLObject):
                 <option> 2023</option>
                 <option> 2024</option>
                 <option> 2025</option>
+                <option> 2026</option>
+                <option> 2027</option>
+                <option> 2028</option>
+                <option> 2029</option>
+                <option> 2030</option>
               </select> </td>
             <td align="center"> Time (h:m:s) </td>
             <td> <select NAME=%(ENDHOUR)s SIZE=1 onChange="clearButtons(gfo('%(QUICKTIMESELECTOR)s'));">
