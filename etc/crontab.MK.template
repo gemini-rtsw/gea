@@ -25,3 +25,4 @@ PYTHONPATH=$PYTHONPATH
 */15    *       *       *       *       nice -18 update_indices >> $GEA_LOG/ArchiveIndex.log 2>&1
 */15    *       *       *       *       cd /gemsoft/opt/gea/watcher  ; ./keeprunning.sh
 */15    *       *       *       *       cd /gemsoft/opt/gea/sysmonII ; ./keeprunning.sh
+5       7       *       *       1       /gemsoft/opt/gea/bin/maintain_index_size.sh >> /gemsoft/var/log/gea/maintenance.log 2>&1
