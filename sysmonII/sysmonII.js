@@ -299,23 +299,44 @@ function addField(parent, labelText, inputId, value) {
 
 function saveTrigger(uuid, type, container) {
   var trigger = {};
+  var err = null;
 
   if (type == "range") {
-    trigger['low']  = parseNum(document.getElementById("triglow").value);
-    trigger['high'] = parseNum(document.getElementById("trighigh").value);
+    var lo = parseNum(document.getElementById("triglow").value);
+    var hi = parseNum(document.getElementById("trighigh").value);
+    if (!isNum(lo)) { err = "Low must be a number"; }
+    else if (!isNum(hi)) { err = "High must be a number"; }
+    else if (lo >= hi) { err = "Low must be less than High"; }
+    else { trigger['low'] = lo; trigger['high'] = hi; }
   } else if (type == "low") {
-    trigger['low'] = parseNum(document.getElementById("triglow").value);
+    var lo = parseNum(document.getElementById("triglow").value);
+    if (!isNum(lo)) { err = "Low must be a number"; }
+    else { trigger['low'] = lo; }
   } else if (type == "high") {
-    trigger['high'] = parseNum(document.getElementById("trighigh").value);
+    var hi = parseNum(document.getElementById("trighigh").value);
+    if (!isNum(hi)) { err = "High must be a number"; }
+    else { trigger['high'] = hi; }
   } else if (type == "exact") {
-    trigger['exact'] = document.getElementById("trigexact").value;
+    var val = document.getElementById("trigexact").value;
+    if (val === "") { err = "Value cannot be empty"; }
+    else { trigger['exact'] = parseNum(val); }
   } else if (type == "not") {
-    trigger['not'] = document.getElementById("trignot").value;
+    var val = document.getElementById("trignot").value;
+    if (val === "") { err = "Value cannot be empty"; }
+    else { trigger['not'] = parseNum(val); }
   } else if (type == "heartbeat") {
-    trigger['heartbeat'] = parseNum(document.getElementById("trigheartbeat").value);
-    trigger['rate']      = parseNum(document.getElementById("trigrate").value);
+    var hb = parseNum(document.getElementById("trigheartbeat").value);
+    var rt = parseNum(document.getElementById("trigrate").value);
+    if (!isNum(hb) || hb <= 0) { err = "Timeout must be a positive number"; }
+    else if (!isNum(rt) || rt <= 0) { err = "Rate must be a positive number"; }
+    else { trigger['heartbeat'] = hb; trigger['rate'] = rt; }
   } else if (type == "null") {
     trigger['null'] = true;
+  }
+
+  if (err) {
+    alert(err);
+    return;
   }
 
   var xhttp = new XMLHttpRequest();
@@ -326,6 +347,22 @@ function saveTrigger(uuid, type, container) {
         alert("Error: " + js['error']);
       } else {
         container.innerHTML = "<b>Saved.</b>";
+        // Update trigger column in the table
+        var infoCell = document.getElementsByClassName(uuid + " info")[0];
+        if (infoCell) {
+          var row = infoCell.parentElement;
+          var cells = row.getElementsByTagName("td");
+          if (cells.length >= 6) {
+            var tmsg = [];
+            for (var k in trigger) {
+              if (k == "not" || k == "exact")
+                tmsg.push(k + ':"' + trigger[k] + '"');
+              else
+                tmsg.push(k + ":" + trigger[k]);
+            }
+            cells[5].innerHTML = tmsg.length ? tmsg.join(", ") : "-";
+          }
+        }
       }
     }
   };
@@ -335,8 +372,13 @@ function saveTrigger(uuid, type, container) {
 }
 
 function parseNum(val) {
+  if (val === "" || val === null || val === undefined) return NaN;
   var n = Number(val);
   return isNaN(n) ? val : n;
+}
+
+function isNum(val) {
+  return typeof val === "number" && !isNaN(val);
 }
 
 

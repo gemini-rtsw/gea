@@ -48,6 +48,42 @@ for sysname in CONFIG['systems']:
 print("Loaded %d systems, %d monitors from sysmonII.json" % (len(SYSTEMS), len(MONITORS)))
 
 
+def validate_trigger(trigger):
+    """Validate trigger settings. Returns error string or None if valid."""
+    if not isinstance(trigger, dict) or len(trigger) == 0:
+        return "Trigger must be a non-empty object"
+
+    keys = set(trigger.keys())
+    valid_types = [
+        {'low', 'high'}, {'low'}, {'high'}, {'exact'}, {'not'},
+        {'heartbeat', 'rate'}, {'heartbeat'}, {'null'}, {'slope'},
+    ]
+    if keys not in valid_types:
+        return "Invalid trigger key combination: %s" % keys
+
+    for k in ('low', 'high', 'heartbeat', 'rate'):
+        if k in trigger:
+            if not isinstance(trigger[k], (int, float)):
+                return "'%s' must be a number, got: %s" % (k, type(trigger[k]).__name__)
+
+    if 'low' in trigger and 'high' in trigger:
+        if trigger['low'] >= trigger['high']:
+            return "Low (%s) must be less than high (%s)" % (trigger['low'], trigger['high'])
+
+    if 'heartbeat' in trigger and trigger['heartbeat'] <= 0:
+        return "Heartbeat must be greater than 0"
+
+    if 'rate' in trigger and trigger['rate'] <= 0:
+        return "Rate must be greater than 0"
+
+    if 'exact' in trigger or 'not' in trigger:
+        val = trigger.get('exact', trigger.get('not'))
+        if not isinstance(val, (str, int, float)):
+            return "exact/not value must be a string or number"
+
+    return None
+
+
 def build_html():
     """Build the main page HTML mimicking showMonitor()."""
     html = """<html>
@@ -214,7 +250,11 @@ class TestHandler(BaseHTTPRequestHandler):
             uuid = data['uuid']
             trigger = data['trigger']
 
-            if uuid in MONITORS:
+            # Validate trigger
+            err = validate_trigger(trigger)
+            if err:
+                result = {"error": err}
+            elif uuid in MONITORS:
                 MONITORS[uuid]['trigger'] = trigger
 
                 # Write back to sysmonII.json

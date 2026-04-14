@@ -251,6 +251,54 @@ class WebInterface(BaseHTTPRequestHandler):
 
 
 
+  def validateTrigger(self, trigger):
+    """
+      Validate trigger settings. Returns error string or None if valid.
+    """
+    if not isinstance(trigger, dict) or len(trigger) == 0:
+      return "Trigger must be a non-empty object"
+
+    keys = set(trigger.keys())
+    valid_types = [
+      {'low', 'high'},  # range
+      {'low'},
+      {'high'},
+      {'exact'},
+      {'not'},
+      {'heartbeat', 'rate'},
+      {'heartbeat'},
+      {'null'},
+      {'slope'},
+    ]
+
+    if keys not in valid_types:
+      return "Invalid trigger key combination: %s" % keys
+
+    for k in ('low', 'high', 'heartbeat', 'rate'):
+      if k in trigger:
+        if not isinstance(trigger[k], (int, float)):
+          return "'%s' must be a number, got: %s" % (k, type(trigger[k]).__name__)
+
+    if 'low' in trigger and 'high' in trigger:
+      if trigger['low'] >= trigger['high']:
+        return "Low (%s) must be less than high (%s)" % (trigger['low'], trigger['high'])
+
+    if 'heartbeat' in trigger:
+      if trigger['heartbeat'] <= 0:
+        return "Heartbeat must be greater than 0"
+
+    if 'rate' in trigger:
+      if trigger['rate'] <= 0:
+        return "Rate must be greater than 0"
+
+    if 'exact' in trigger or 'not' in trigger:
+      val = trigger.get('exact', trigger.get('not'))
+      if not isinstance(val, (str, int, float)):
+        return "exact/not value must be a string or number"
+
+    return None
+
+
   def jsonTrigger(self, uuid, trigger):
     """
       Update trigger settings for a monitor and save to config file.
@@ -263,6 +311,11 @@ class WebInterface(BaseHTTPRequestHandler):
       mon = monitors[uuid]
     except:
       return json.dumps({'error': "trigger bad uuid"}, indent = 1)
+
+    # Validate before applying
+    err = self.validateTrigger(trigger)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
 
     # Update in-memory trigger config
     mon.trgconf.clear()
