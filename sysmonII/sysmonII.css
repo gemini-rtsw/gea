@@ -90,3 +90,18 @@ td.info {
 canvas {
   border: 0px solid black;
 }
+
+#triggerdiv {
+  font-family: arial, helvetica, sans-serif;
+  font-size: 10pt;
+}
+
+#triggerdiv select, #triggerdiv input {
+  font-size: 10pt;
+  margin: 2px;
+}
+
+#triggerdiv button {
+  font-size: 10pt;
+  margin-top: 4px;
+}

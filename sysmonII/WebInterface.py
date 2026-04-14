@@ -29,6 +29,7 @@ htmltailer = """  <div id="infopopup" onMouseLeave="hideInfo();">
     <img src="NoData.gif" id="plotimg"/>
    </fieldset>
    <table id="infotable"/>
+   <div id="triggerdiv" style="margin-top:6px;"></div>
   </div>
  </body>
 </html>
@@ -250,6 +251,109 @@ class WebInterface(BaseHTTPRequestHandler):
 
 
 
+  def validateTrigger(self, trigger):
+    """
+      Validate trigger settings. Returns error string or None if valid.
+    """
+    if not isinstance(trigger, dict) or len(trigger) == 0:
+      return "Trigger must be a non-empty object"
+
+    keys = set(trigger.keys())
+    valid_types = [
+      {'low', 'high'},  # range
+      {'low'},
+      {'high'},
+      {'exact'},
+      {'not'},
+      {'heartbeat', 'rate'},
+      {'heartbeat'},
+      {'null'},
+      {'slope'},
+    ]
+
+    if keys not in valid_types:
+      return "Invalid trigger key combination: %s" % keys
+
+    for k in ('low', 'high', 'heartbeat', 'rate'):
+      if k in trigger:
+        if not isinstance(trigger[k], (int, float)):
+          return "'%s' must be a number, got: %s" % (k, type(trigger[k]).__name__)
+
+    if 'low' in trigger and 'high' in trigger:
+      if trigger['low'] >= trigger['high']:
+        return "Low (%s) must be less than high (%s)" % (trigger['low'], trigger['high'])
+
+    if 'heartbeat' in trigger:
+      if trigger['heartbeat'] <= 0:
+        return "Heartbeat must be greater than 0"
+
+    if 'rate' in trigger:
+      if trigger['rate'] <= 0:
+        return "Rate must be greater than 0"
+
+    if 'exact' in trigger or 'not' in trigger:
+      val = trigger.get('exact', trigger.get('not'))
+      if not isinstance(val, (str, int, float)):
+        return "exact/not value must be a string or number"
+
+    return None
+
+
+  def jsonTrigger(self, uuid, trigger):
+    """
+      Update trigger settings for a monitor and save to config file.
+    """
+
+    smII     = self.server.sysmon
+    monitors = smII.monitors
+
+    try:
+      mon = monitors[uuid]
+    except:
+      return json.dumps({'error': "trigger bad uuid"}, indent = 1)
+
+    # Validate before applying
+    err = self.validateTrigger(trigger)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
+
+    # Update in-memory trigger config
+    mon.trgconf.clear()
+    mon.trgconf.update(trigger)
+    mon.monconf['trigger'] = mon.trgconf
+
+    # Re-assign trigger function
+    t = mon.trgconf
+    if ('high' in t) and ('low' in t):
+      mon.trigger = mon.rangeTrigger
+    elif 'low' in t:
+      mon.trigger = mon.lowTrigger
+    elif 'high' in t:
+      mon.trigger = mon.highTrigger
+    elif 'exact' in t:
+      mon.trigger = mon.exactTrigger
+    elif 'not' in t:
+      mon.trigger = mon.notTrigger
+    elif 'slope' in t:
+      mon.trigger = mon.slopeTrigger
+    elif 'null' in t:
+      mon.trigger = mon.nullTrigger
+    elif 'heartbeat' in t:
+      mon.trigger = mon.heartbeatTrigger
+
+    # Write updated config to disk
+    confpath = smII.confdir + "/etc/gea/sysmonII/sysmonII.json"
+    try:
+      with open(confpath, "w") as f:
+        json.dump(smII.config, f, indent = 1)
+    except Exception as e:
+      log.critical("Failed to write config: %s" % e)
+      return json.dumps({'error': "Failed to save config"}, indent = 1)
+
+    log.info("Trigger updated for %s: %s" % (uuid, trigger))
+    return json.dumps({'success': True}, indent = 1)
+
+
   def jsonInfo(self, uuid):
     #
     # Return meta data (ioc host, precision, units, etc.) for
@@ -300,7 +404,7 @@ class WebInterface(BaseHTTPRequestHandler):
 
     plotdata = mon.getPlot()
 
-    return json.dumps({'meta': mt, "plotdata":plotdata}, indent = 1)
+    return json.dumps({'meta': mt, "plotdata":plotdata, "trigger":mon.trgconf, "uuid":uuid}, indent = 1)
 
 
 
@@ -491,6 +595,35 @@ class WebInterface(BaseHTTPRequestHandler):
 #   The following was added after-the-fact to support the THS email notification statuses.
 # This code should be moved to a general notification class.
 #
+
+  def do_POST(self):
+    urlargs = urlparse(self.path)
+
+    if urlargs.path == "/trigger":
+      self.send_response(200)
+      self.send_header('Content-type','application/json')
+      self.send_header('Access-Control-Allow-Origin','*')
+      self.end_headers()
+
+      content_length = int(self.headers.get('Content-Length', 0))
+      body = self.rfile.read(content_length)
+      try:
+        data = json.loads(body)
+        uuid = data['uuid']
+        trigger = data['trigger']
+      except Exception as e:
+        self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf8"))
+        return
+      self.wfile.write(bytes(self.jsonTrigger(uuid, trigger), "utf8"))
+      return
+
+    else:
+      self.send_response(404)
+      self.send_header('Content-type','text/html')
+      self.end_headers()
+      self.wfile.write(bytes("Not Found", "utf8"))
+      return
+
 
   def sendRabbitMsg(self, msg):
     """
