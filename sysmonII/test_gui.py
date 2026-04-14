@@ -43,6 +43,7 @@ for sysname in CONFIG['systems']:
         "comment": sysconf.get('comment', ''),
         "monitors": uuids,
         "notify": sysconf.get('notify', ''),
+        "notify2": sysconf.get('notify2', None),
     }
 
 print("Loaded %d systems, %d monitors from sysmonII.json" % (len(SYSTEMS), len(MONITORS)))
@@ -146,8 +147,12 @@ def build_html():
             html += '<td>%s</td>' % ostr
             html += '</tr>\n'
 
-        # Email row (colspan to span full width, matching html.table behavior)
-        html += '  <tr><td>Email List:</td><td colspan="6">%s</td></tr>\n' % sys["notify"]
+        # Email rows with edit buttons
+        html += '  <tr><td>Email List:</td><td colspan="6"><span class="emaillist %s">%s</span> <button type="button" onclick="showEmailEdit(\'%s\', \'notify\');">Edit</button></td></tr>\n' % (sysname, sys["notify"], sysname)
+        html += '  <tr><td colspan="7"><div class="emailedit %s" style="display:none;"></div></td></tr>\n' % sysname
+        notify2 = sys.get("notify2") or "<i>none</i>"
+        html += '  <tr><td>Email List (Tier 2):</td><td colspan="6"><span class="emaillist2 %s">%s</span> <button type="button" onclick="showEmailEdit(\'%s\', \'notify2\');">Edit</button></td></tr>\n' % (sysname, notify2, sysname)
+        html += '  <tr><td colspan="7"><div class="emailedit2 %s" style="display:none;"></div></td></tr>\n' % sysname
         html += '  <tr><td style="display:none;"></td></tr>\n'
 
     html += """  </table>
@@ -217,7 +222,7 @@ class TestHandler(BaseHTTPRequestHandler):
             uuid = queries.get("uuid", "")
             if uuid in MONITORS:
                 mon = MONITORS[uuid]
-                result = {"meta": mon["meta"], "plotdata": None, "trigger": mon["trigger"], "uuid": uuid}
+                result = {"meta": mon["meta"], "plotdata": None, "trigger": mon["trigger"], "filter": mon["filter"], "options": mon["options"], "uuid": uuid}
             else:
                 result = {"error": "unknown uuid: %s" % uuid}
             self.send_response(200)
@@ -273,6 +278,93 @@ class TestHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(bytes(json.dumps(result), "utf8"))
+        elif urlargs.path == "/filter":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
+            uuid = data['uuid']
+            flt  = data['filter']
+
+            if uuid in MONITORS:
+                MONITORS[uuid]['filter'] = flt
+                sysname, offset = uuid.rsplit(":", 1)
+                offset = int(offset)
+                CONFIG['systems'][sysname]['monitor'][offset]['filter'] = flt
+                with open("sysmonII.json", "w") as f:
+                    json.dump(CONFIG, f, indent=1)
+                print("Updated filter for %s: %s" % (uuid, flt))
+                result = {"success": True}
+            else:
+                result = {"error": "unknown uuid"}
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(result), "utf8"))
+
+        elif urlargs.path == "/options":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
+            uuid    = data['uuid']
+            options = data['options']
+
+            if uuid in MONITORS:
+                MONITORS[uuid]['options'] = options
+                sysname, offset = uuid.rsplit(":", 1)
+                offset = int(offset)
+                CONFIG['systems'][sysname]['monitor'][offset]['options'] = options
+                with open("sysmonII.json", "w") as f:
+                    json.dump(CONFIG, f, indent=1)
+                print("Updated options for %s: %s" % (uuid, options))
+                result = {"success": True}
+            else:
+                result = {"error": "unknown uuid"}
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(result), "utf8"))
+
+        elif urlargs.path == "/notify":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
+            sysname = data['system']
+            notify  = data['notify'].strip()
+            tier    = data.get('tier', 'notify')
+
+            import re
+            emails = notify.split()
+            err = None
+
+            # Tier 2 can be empty (clears it), tier 1 cannot
+            if len(emails) == 0 and tier == 'notify':
+                err = "Tier 1 email list cannot be empty"
+            elif len(emails) > 0:
+                for addr in emails:
+                    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', addr):
+                        err = "Invalid email address: %s" % addr
+                        break
+
+            if err:
+                result = {"error": err}
+            elif sysname in SYSTEMS:
+                val = notify if notify else None
+                SYSTEMS[sysname][tier] = val
+                CONFIG['systems'][sysname][tier] = val
+                with open("sysmonII.json", "w") as f:
+                    json.dump(CONFIG, f, indent=1)
+                print("Updated %s for %s: %s" % (tier, sysname, notify))
+                result = {"success": True}
+            else:
+                result = {"error": "unknown system"}
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(result), "utf8"))
+
         else:
             self.send_response(404)
             self.end_headers()

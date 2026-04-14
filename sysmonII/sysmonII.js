@@ -168,15 +168,31 @@ function showInfoTable(info, event, infopopup, uuid) {
     infocell.appendChild(document.createTextNode(mt[key]));
   }
 
-  // Add trigger settings button
+  // Add settings buttons
   let triggerDiv = document.getElementById("triggerdiv");
   triggerDiv.innerHTML = "";
   triggerDiv.style.display = "block";
 
+  var settingsDiv = document.createElement("div");
+  settingsDiv.id = "settingsform";
+  triggerDiv.appendChild(settingsDiv);
+
   let btn = document.createElement("button");
-  btn.innerText = "Trigger Settings";
-  btn.onclick = function() { showTriggerForm(info['trigger'], info['uuid'], triggerDiv); };
+  btn.innerText = "Trigger";
+  btn.onclick = function() { showTriggerForm(info['trigger'], info['uuid'], settingsDiv); };
   triggerDiv.appendChild(btn);
+
+  let fbtn = document.createElement("button");
+  fbtn.innerText = "Filter";
+  fbtn.style.marginLeft = "4px";
+  fbtn.onclick = function() { showFilterForm(info['filter'], info['uuid'], settingsDiv); };
+  triggerDiv.appendChild(fbtn);
+
+  let obtn = document.createElement("button");
+  obtn.innerText = "Options";
+  obtn.style.marginLeft = "4px";
+  obtn.onclick = function() { showOptionsForm(info['options'], info['uuid'], settingsDiv); };
+  triggerDiv.appendChild(obtn);
 
   // Absolute position if it won't fit.
   if (infopopup.clientHeight + event.clientY > window.innerHeight) {
@@ -379,6 +395,334 @@ function parseNum(val) {
 
 function isNum(val) {
   return typeof val === "number" && !isNaN(val);
+}
+
+
+/*
+ * Filter settings form.
+ */
+
+function detectFilterType(filter) {
+  if ('average' in filter) return "average";
+  if ('median' in filter)  return "median";
+  if ('slope' in filter)   return "slope";
+  if ('bit' in filter)     return "bit";
+  if ('null' in filter)    return "null";
+  return "null";
+}
+
+function parseFilterSpan(filter, ftype) {
+  var span = filter[ftype];
+  if (!span || typeof span !== "string") return {unit: "seconds", value: ""};
+  var parts = span.split("=");
+  return {unit: parts[0], value: parts[1] || ""};
+}
+
+function showFilterForm(filter, uuid, container) {
+  container.innerHTML = "";
+
+  var currentType = detectFilterType(filter);
+
+  var label = document.createElement("b");
+  label.innerText = "Filter Type: ";
+  container.appendChild(label);
+
+  var sel = document.createElement("select");
+  sel.id = "flttype";
+  var types = ["null", "average", "median", "slope", "bit"];
+  for (var i = 0; i < types.length; i++) {
+    var opt = document.createElement("option");
+    opt.value = types[i];
+    opt.text  = types[i];
+    if (types[i] == currentType) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  container.appendChild(sel);
+  container.appendChild(document.createElement("br"));
+
+  var fields = document.createElement("div");
+  fields.id = "fltfields";
+  container.appendChild(fields);
+
+  function renderFields() {
+    fields.innerHTML = "";
+    var t = sel.value;
+
+    if (t == "null") return;
+
+    if (t == "bit") {
+      var parsed = (currentType == "bit") ? parseFilterSpan(filter, "bit") : {unit:"num", value:""};
+      addField(fields, "Bit Number", "fltbitnum", parsed.value);
+    } else {
+      var parsed = (currentType == t) ? parseFilterSpan(filter, t) : {unit:"seconds", value:""};
+
+      var ulbl = document.createElement("label");
+      ulbl.innerText = "Unit: ";
+      fields.appendChild(ulbl);
+
+      var usel = document.createElement("select");
+      usel.id = "fltunit";
+      var units = ["seconds", "minutes", "hours", "samples"];
+      for (var i = 0; i < units.length; i++) {
+        var opt = document.createElement("option");
+        opt.value = units[i];
+        opt.text  = units[i];
+        if (units[i] == parsed.unit) opt.selected = true;
+        usel.appendChild(opt);
+      }
+      fields.appendChild(usel);
+      fields.appendChild(document.createTextNode(" "));
+      addField(fields, "Value", "fltspan", parsed.value);
+    }
+  }
+
+  sel.onchange = renderFields;
+  renderFields();
+
+  container.appendChild(document.createElement("br"));
+
+  var savebtn = document.createElement("button");
+  savebtn.innerText = "Save";
+  savebtn.onclick = function() { saveFilter(uuid, sel.value, container); };
+  container.appendChild(savebtn);
+
+  var cancelbtn = document.createElement("button");
+  cancelbtn.innerText = "Cancel";
+  cancelbtn.style.marginLeft = "4px";
+  cancelbtn.onclick = function() { container.innerHTML = ""; };
+  container.appendChild(cancelbtn);
+}
+
+function saveFilter(uuid, type, container) {
+  var filter = {};
+  var err = null;
+
+  if (type == "null") {
+    filter['null'] = true;
+  } else if (type == "bit") {
+    var val = document.getElementById("fltbitnum").value;
+    var n = parseInt(val);
+    if (isNaN(n) || n < 0) { err = "Bit number must be a non-negative integer"; }
+    else { filter['bit'] = "num=" + n; }
+  } else {
+    var unit = document.getElementById("fltunit").value;
+    var val  = document.getElementById("fltspan").value;
+    var n = parseInt(val);
+    if (isNaN(n) || n <= 0) { err = "Span value must be a positive integer"; }
+    else { filter[type] = unit + "=" + n; }
+  }
+
+  if (err) {
+    alert(err);
+    return;
+  }
+
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var js = JSON.parse(this.responseText);
+      if (js['error']) {
+        alert("Error: " + js['error']);
+      } else {
+        container.innerHTML = "<b>Saved.</b>";
+        // Update filter column in the table
+        var infoCell = document.getElementsByClassName(uuid + " info")[0];
+        if (infoCell) {
+          var row = infoCell.parentElement;
+          var cells = row.getElementsByTagName("td");
+          if (cells.length >= 5) {
+            var fmsg = [];
+            for (var k in filter) {
+              if (k == "null") continue;
+              fmsg.push(k + ":" + filter[k]);
+            }
+            cells[4].innerHTML = fmsg.length ? fmsg.join(", ") : "-";
+          }
+        }
+      }
+    }
+  };
+  xhttp.open("POST", "/filter", true);
+  xhttp.setRequestHeader("Content-Type", "application/json");
+  xhttp.send(JSON.stringify({uuid: uuid, filter: filter}));
+}
+
+
+/*
+ * Options form.
+ */
+
+function showOptionsForm(options, uuid, container) {
+  container.innerHTML = "";
+
+  if (!options) options = {};
+
+  var label = document.createElement("b");
+  label.innerText = "Options:";
+  container.appendChild(label);
+  container.appendChild(document.createElement("br"));
+
+  var opts = [
+    {key: "noAlarm", label: "No Alarm (suppress email alerts)"},
+    {key: "noLink",  label: "No Link (hide GEA plotter link)"}
+  ];
+
+  for (var i = 0; i < opts.length; i++) {
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id   = "opt_" + opts[i].key;
+    cb.checked = (opts[i].key in options) && options[opts[i].key];
+    container.appendChild(cb);
+    var lbl = document.createElement("label");
+    lbl.htmlFor = cb.id;
+    lbl.innerText = " " + opts[i].label;
+    container.appendChild(lbl);
+    container.appendChild(document.createElement("br"));
+  }
+
+  container.appendChild(document.createElement("br"));
+
+  var savebtn = document.createElement("button");
+  savebtn.innerText = "Save";
+  savebtn.onclick = function() { saveOptions(uuid, container); };
+  container.appendChild(savebtn);
+
+  var cancelbtn = document.createElement("button");
+  cancelbtn.innerText = "Cancel";
+  cancelbtn.style.marginLeft = "4px";
+  cancelbtn.onclick = function() { container.innerHTML = ""; };
+  container.appendChild(cancelbtn);
+}
+
+function saveOptions(uuid, container) {
+  var options = {};
+
+  if (document.getElementById("opt_noAlarm").checked) options['noAlarm'] = true;
+  if (document.getElementById("opt_noLink").checked)  options['noLink']  = true;
+
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var js = JSON.parse(this.responseText);
+      if (js['error']) {
+        alert("Error: " + js['error']);
+      } else {
+        container.innerHTML = "<b>Saved.</b>";
+        // Update options column in the table
+        var infoCell = document.getElementsByClassName(uuid + " info")[0];
+        if (infoCell) {
+          var row = infoCell.parentElement;
+          var cells = row.getElementsByTagName("td");
+          if (cells.length >= 7) {
+            var omsg = [];
+            for (var k in options) omsg.push(k);
+            cells[6].innerHTML = omsg.length ? omsg.join(", ") : "-";
+          }
+        }
+      }
+    }
+  };
+  xhttp.open("POST", "/options", true);
+  xhttp.setRequestHeader("Content-Type", "application/json");
+  xhttp.send(JSON.stringify({uuid: uuid, options: options}));
+}
+
+
+/*
+ * Email list editor.
+ */
+
+function showEmailEdit(sysname, tier) {
+  var suffix   = (tier == "notify2") ? "2" : "";
+  var listSpan = document.getElementsByClassName("emaillist" + suffix + " " + sysname)[0];
+  var editDiv  = document.getElementsByClassName("emailedit" + suffix + " " + sysname)[0];
+
+  var currentEmails = listSpan.innerText.trim();
+  if (currentEmails == "none") currentEmails = "";
+
+  editDiv.style.display = "block";
+  editDiv.innerHTML = "";
+
+  var tierLabel = (tier == "notify2") ? "Tier 2" : "Tier 1";
+  var label = document.createElement("b");
+  label.innerText = "Edit " + tierLabel + " email list (one per line):";
+  editDiv.appendChild(label);
+  editDiv.appendChild(document.createElement("br"));
+
+  var textarea = document.createElement("textarea");
+  textarea.id    = "emailtext_" + tier + "_" + sysname;
+  textarea.rows  = 4;
+  textarea.cols  = 80;
+  textarea.value = currentEmails.replace(/ /g, "\n");
+  textarea.style.fontFamily = "arial, helvetica, sans-serif";
+  textarea.style.fontSize   = "10pt";
+  editDiv.appendChild(textarea);
+  editDiv.appendChild(document.createElement("br"));
+
+  if (tier == "notify2") {
+    var note = document.createElement("i");
+    note.innerText = "Tier 2 receives alerts only after 15 minutes (escalation). Leave empty to disable.";
+    note.style.fontSize = "9pt";
+    editDiv.appendChild(note);
+    editDiv.appendChild(document.createElement("br"));
+  }
+
+  var savebtn = document.createElement("button");
+  savebtn.innerText = "Save";
+  savebtn.onclick = function() { saveEmailList(sysname, tier); };
+  editDiv.appendChild(savebtn);
+
+  var cancelbtn = document.createElement("button");
+  cancelbtn.innerText = "Cancel";
+  cancelbtn.style.marginLeft = "4px";
+  cancelbtn.onclick = function() { editDiv.style.display = "none"; editDiv.innerHTML = ""; };
+  editDiv.appendChild(cancelbtn);
+}
+
+function saveEmailList(sysname, tier) {
+  var textarea = document.getElementById("emailtext_" + tier + "_" + sysname);
+  var raw      = textarea.value.trim();
+
+  // Normalize: split on whitespace/newlines, rejoin with spaces
+  var emails = raw.split(/\s+/).filter(function(e) { return e.length > 0; });
+
+  // Tier 1 cannot be empty, tier 2 can
+  if (emails.length == 0 && tier == "notify") {
+    alert("Tier 1 email list cannot be empty");
+    return;
+  }
+
+  // Basic email validation
+  var emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+  for (var i = 0; i < emails.length; i++) {
+    if (!emailRe.test(emails[i])) {
+      alert("Invalid email address: " + emails[i]);
+      return;
+    }
+  }
+
+  var notify = emails.join(" ");
+  var suffix = (tier == "notify2") ? "2" : "";
+
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var js = JSON.parse(this.responseText);
+      if (js['error']) {
+        alert("Error: " + js['error']);
+      } else {
+        // Update display
+        var listSpan = document.getElementsByClassName("emaillist" + suffix + " " + sysname)[0];
+        listSpan.innerHTML = notify ? notify : "<i>none</i>";
+        var editDiv = document.getElementsByClassName("emailedit" + suffix + " " + sysname)[0];
+        editDiv.style.display = "none";
+        editDiv.innerHTML = "";
+      }
+    }
+  };
+  xhttp.open("POST", "/notify", true);
+  xhttp.setRequestHeader("Content-Type", "application/json");
+  xhttp.send(JSON.stringify({system: sysname, notify: notify, tier: tier}));
 }
 
 

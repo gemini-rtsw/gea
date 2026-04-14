@@ -18,6 +18,7 @@ class System:
     self.site     = os.environ['GEMINI_SITE'] if 'GEMINI_SITE' in os.environ else "MK"
     self.confdir  = os.environ['GEMINI_TOP']  if 'GEMINI_TOP'  in os.environ else "./"
     self.notify   = sysconf['notify']         if 'notify'      in sysconf else None
+    self.notify2  = sysconf['notify2']        if 'notify2'     in sysconf else None
     self.desc     = sysconf['description']    if 'description' in sysconf else None
     self.comment  = sysconf['comment']        if 'comment'     in sysconf else None
     self.emailenable = False
