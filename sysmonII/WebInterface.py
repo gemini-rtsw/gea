@@ -143,16 +143,16 @@ class WebInterface(BaseHTTPRequestHandler):
   
       if system.notify:
         r = t.row()
-        c = r.col("Email List:")
-        c = r.col('<span class="emaillist {0}">{1}</span> <button type="button" onclick="showEmailEdit(\'{0}\', \'notify\');">Edit</button>'.format(sysname, sanitize(system.notify)))
+        c = r.col("Email List (Primary):")
+        c = r.col('<button type="button" onclick="showEmailEdit(\'{0}\', \'notify\');">Edit</button> <span class="emaillist {0}">{1}</span>'.format(sysname, sanitize(system.notify)))
 
         r = t.row()
         c = r.col('<div class="emailedit {0}" style="display:none;"></div>'.format(sysname))
 
         r = t.row()
         notify2 = sanitize(system.notify2) if system.notify2 else "<i>none</i>"
-        c = r.col("Email List (Tier 2):")
-        c = r.col('<span class="emaillist2 {0}">{1}</span> <button type="button" onclick="showEmailEdit(\'{0}\', \'notify2\');">Edit</button>'.format(sysname, notify2))
+        c = r.col("Email List (Secondary):")
+        c = r.col('<button type="button" onclick="showEmailEdit(\'{0}\', \'notify2\');">Edit</button> <span class="emaillist2 {0}">{1}</span>'.format(sysname, notify2))
 
         r = t.row()
         c = r.col('<div class="emailedit2 {0}" style="display:none;"></div>'.format(sysname))
@@ -526,7 +526,7 @@ class WebInterface(BaseHTTPRequestHandler):
       # Validate: each entry should look like an email address
       emails = notify.split()
       if len(emails) == 0 and tier == 'notify':
-        return json.dumps({'error': "Tier 1 email list cannot be empty"}, indent = 1)
+        return json.dumps({'error': "Primary email list cannot be empty"}, indent = 1)
       import re
       for addr in emails:
         if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', addr):

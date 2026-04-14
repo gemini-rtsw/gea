@@ -643,7 +643,7 @@ function showEmailEdit(sysname, tier) {
   editDiv.style.display = "block";
   editDiv.innerHTML = "";
 
-  var tierLabel = (tier == "notify2") ? "Tier 2" : "Tier 1";
+  var tierLabel = (tier == "notify2") ? "Secondary" : "Primary";
   var label = document.createElement("b");
   label.innerText = "Edit " + tierLabel + " email list (one per line):";
   editDiv.appendChild(label);
@@ -661,7 +661,7 @@ function showEmailEdit(sysname, tier) {
 
   if (tier == "notify2") {
     var note = document.createElement("i");
-    note.innerText = "Tier 2 receives alerts only after 15 minutes (escalation). Leave empty to disable.";
+    note.innerText = "Secondary list receives alerts only after 15 minutes (escalation). Leave empty to disable.";
     note.style.fontSize = "9pt";
     editDiv.appendChild(note);
     editDiv.appendChild(document.createElement("br"));
@@ -688,7 +688,7 @@ function saveEmailList(sysname, tier) {
 
   // Tier 1 cannot be empty, tier 2 can
   if (emails.length == 0 && tier == "notify") {
-    alert("Tier 1 email list cannot be empty");
+    alert("Primary email list cannot be empty");
     return;
   }
 

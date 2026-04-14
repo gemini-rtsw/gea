@@ -148,12 +148,19 @@ def build_html():
             html += '</tr>\n'
 
         # Email rows with edit buttons
-        html += '  <tr><td>Email List:</td><td colspan="6"><span class="emaillist %s">%s</span> <button type="button" onclick="showEmailEdit(\'%s\', \'notify\');">Edit</button></td></tr>\n' % (sysname, sys["notify"], sysname)
+        html += '  <tr><td>Email List (Primary):</td><td colspan="6"><button type="button" onclick="showEmailEdit(\'%s\', \'notify\');">Edit</button> <span class="emaillist %s">%s</span></td></tr>\n' % (sysname, sysname, sys["notify"])
         html += '  <tr><td colspan="7"><div class="emailedit %s" style="display:none;"></div></td></tr>\n' % sysname
         notify2 = sys.get("notify2") or "<i>none</i>"
-        html += '  <tr><td>Email List (Tier 2):</td><td colspan="6"><span class="emaillist2 %s">%s</span> <button type="button" onclick="showEmailEdit(\'%s\', \'notify2\');">Edit</button></td></tr>\n' % (sysname, notify2, sysname)
+        html += '  <tr><td>Email List (Secondary):</td><td colspan="6"><button type="button" onclick="showEmailEdit(\'%s\', \'notify2\');">Edit</button> <span class="emaillist2 %s">%s</span></td></tr>\n' % (sysname, sysname, notify2)
         html += '  <tr><td colspan="7"><div class="emailedit2 %s" style="display:none;"></div></td></tr>\n' % sysname
+
         html += '  <tr><td style="display:none;"></td></tr>\n'
+
+        html += """  <tr><td colspan="7">
+  Email notification <b class="emailactive {0}">Unknown</b> &nbsp;
+  <button type="button" class="emailbutton {0}" onclick="email_enable('{0}');" >&nbsp;&nbsp;</button>
+  <hr>
+</td></tr>\n""".format(sysname)
 
     html += """  </table>
   <div id="infopopup" onMouseLeave="hideInfo();">
@@ -340,7 +347,7 @@ class TestHandler(BaseHTTPRequestHandler):
 
             # Tier 2 can be empty (clears it), tier 1 cannot
             if len(emails) == 0 and tier == 'notify':
-                err = "Tier 1 email list cannot be empty"
+                err = "Primary email list cannot be empty"
             elif len(emails) > 0:
                 for addr in emails:
                     if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', addr):
