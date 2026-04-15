@@ -14,6 +14,8 @@ from Cache import pvType
 import logging
 log = logging.getLogger("sysmonII")
 
+config_lock = threading.Lock()
+
 htmlheader = """<html>
  <head>
   <title> System Monitor II </title>
@@ -36,6 +38,25 @@ htmltailer = """  <div id="infopopup" onMouseLeave="hideInfo();">
 """
 
 gealink = "http://geanorth.hi.gemini.edu/pages/common/plotterPage?PATTERN=%s&SYSTEMS=%s"	# pvname geaengine
+
+def sanitize(text):
+  """Escape HTML special characters to prevent XSS."""
+  if text is None: return ""
+  return str(text).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;").replace("'","&#x27;")
+
+
+def saveConfig(smII):
+  """Write config to disk under lock. Returns error string or None."""
+  confpath = smII.confdir + "/etc/gea/sysmonII/sysmonII.json"
+  try:
+    with config_lock:
+      with open(confpath, "w") as f:
+        json.dump(smII.config, f, indent = 1)
+  except Exception as e:
+    log.critical("Failed to write config: %s" % e)
+    return "Failed to save config: %s" % e
+  return None
+
 
 class WebInterface(BaseHTTPRequestHandler):
 
@@ -122,8 +143,19 @@ class WebInterface(BaseHTTPRequestHandler):
   
       if system.notify:
         r = t.row()
-        c = r.col("Email List:")
-        c = r.col(system.notify)
+        c = r.col("Email List (Primary):")
+        c = r.col('<button type="button" onclick="showEmailEdit(\'{0}\', \'notify\');">Edit</button> <span class="emaillist {0}">{1}</span>'.format(sysname, sanitize(system.notify)))
+
+        r = t.row()
+        c = r.col('<div class="emailedit {0}" style="display:none;"></div>'.format(sysname))
+
+        r = t.row()
+        notify2 = sanitize(system.notify2) if system.notify2 else "<i>none</i>"
+        c = r.col("Email List (Secondary):")
+        c = r.col('<button type="button" onclick="showEmailEdit(\'{0}\', \'notify2\');">Edit</button> <span class="emaillist2 {0}">{1}</span>'.format(sysname, notify2))
+
+        r = t.row()
+        c = r.col('<div class="emailedit2 {0}" style="display:none;"></div>'.format(sysname))
 
         r = t.row()
         c = r.col("", style="display:none;")
@@ -341,16 +373,174 @@ class WebInterface(BaseHTTPRequestHandler):
     elif 'heartbeat' in t:
       mon.trigger = mon.heartbeatTrigger
 
-    # Write updated config to disk
-    confpath = smII.confdir + "/etc/gea/sysmonII/sysmonII.json"
-    try:
-      with open(confpath, "w") as f:
-        json.dump(smII.config, f, indent = 1)
-    except Exception as e:
-      log.critical("Failed to write config: %s" % e)
-      return json.dumps({'error': "Failed to save config"}, indent = 1)
+    err = saveConfig(smII)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
 
     log.info("Trigger updated for %s: %s" % (uuid, trigger))
+    return json.dumps({'success': True}, indent = 1)
+
+
+  def validateFilter(self, flt):
+    """
+      Validate filter settings. Returns error string or None if valid.
+    """
+    if not isinstance(flt, dict) or len(flt) == 0:
+      return "Filter must be a non-empty object"
+
+    keys = set(flt.keys())
+
+    if keys == {'null'}:
+      return None
+
+    valid_span_types = {'average', 'median', 'slope', 'bit'}
+    if len(keys) != 1 or not keys.issubset(valid_span_types):
+      return "Invalid filter type: %s" % keys
+
+    ftype = list(keys)[0]
+    span = flt[ftype]
+    if not isinstance(span, str):
+      return "Filter span must be a string, got: %s" % type(span).__name__
+
+    try:
+      unit, val = span.split("=")
+      val = int(val)
+    except:
+      return "Filter span must be in format 'unit=number', got: %s" % span
+
+    if val <= 0:
+      return "Filter span value must be positive"
+
+    if ftype == 'bit':
+      if unit != 'num':
+        return "Bit filter must use 'num=N' format"
+    else:
+      if unit not in ('seconds', 'minutes', 'hours', 'samples'):
+        return "Invalid span unit: %s (must be seconds, minutes, hours, or samples)" % unit
+
+    return None
+
+
+  def jsonFilter(self, uuid, flt):
+    """
+      Update filter settings for a monitor and save to config file.
+    """
+
+    smII     = self.server.sysmon
+    monitors = smII.monitors
+
+    try:
+      mon = monitors[uuid]
+    except:
+      return json.dumps({'error': "filter bad uuid"}, indent = 1)
+
+    err = self.validateFilter(flt)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
+
+    # Update in-memory filter config
+    mon.fltconf.clear()
+    mon.fltconf.update(flt)
+    mon.monconf['filter'] = mon.fltconf
+
+    # Re-assign filter function and parse span
+    f = mon.fltconf
+    mon.fltsecs = None
+    mon.fltcnt  = None
+    if 'average' in f:
+      mon.filter = mon.averageFilter
+      mon.fltsecs, mon.fltcnt = mon.parseSpan(f['average'])
+    elif 'median' in f:
+      mon.filter = mon.medianFilter
+      mon.fltsecs, mon.fltcnt = mon.parseSpan(f['median'])
+    elif 'slope' in f:
+      mon.filter = mon.slopeFilter
+      mon.fltsecs, mon.fltcnt = mon.parseSpan(f['slope'])
+    elif 'null' in f:
+      mon.filter = mon.nullFilter
+    elif 'bit' in f:
+      mon.filter = mon.bitFilter
+      mon.fltsecs, mon.fltcnt = mon.parseSpan(f['bit'])
+
+    err = saveConfig(smII)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
+
+    log.info("Filter updated for %s: %s" % (uuid, flt))
+    return json.dumps({'success': True}, indent = 1)
+
+
+  def jsonOptions(self, uuid, options):
+    """
+      Update options for a monitor and save to config file.
+    """
+
+    smII     = self.server.sysmon
+    monitors = smII.monitors
+
+    try:
+      mon = monitors[uuid]
+    except:
+      return json.dumps({'error': "options bad uuid"}, indent = 1)
+
+    valid_opts = {'noAlarm', 'noLink'}
+    for k in options:
+      if k not in valid_opts:
+        return json.dumps({'error': "Unknown option: %s" % k}, indent = 1)
+      if not isinstance(options[k], bool):
+        return json.dumps({'error': "Option '%s' must be true or false" % k}, indent = 1)
+
+    # Update in-memory
+    mon.options.clear()
+    mon.options.update(options)
+    mon.monconf['options'] = mon.options
+
+    err = saveConfig(smII)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
+
+    log.info("Options updated for %s: %s" % (uuid, options))
+    return json.dumps({'success': True}, indent = 1)
+
+
+  def jsonNotify(self, sysname, notify, tier='notify'):
+    """
+      Update email notify list for a system and save to config file.
+      tier is 'notify' for tier 1, 'notify2' for tier 2.
+    """
+
+    smII    = self.server.sysmon
+    systems = smII.systems
+
+    if sysname not in systems:
+      return json.dumps({'error': "Unknown system: %s" % sysname}, indent = 1)
+
+    if tier not in ('notify', 'notify2'):
+      return json.dumps({'error': "Invalid tier: %s" % tier}, indent = 1)
+
+    # Tier 2 can be empty (to clear it)
+    if notify == "" and tier == 'notify2':
+      setattr(systems[sysname], tier, None)
+      smII.config['systems'][sysname][tier] = None
+    else:
+      # Validate: each entry should look like an email address
+      emails = notify.split()
+      if len(emails) == 0 and tier == 'notify':
+        return json.dumps({'error': "Primary email list cannot be empty"}, indent = 1)
+      import re
+      for addr in emails:
+        if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', addr):
+          return json.dumps({'error': "Invalid email address: %s" % addr}, indent = 1)
+
+      # Update in memory
+      setattr(systems[sysname], tier, notify)
+      smII.config['systems'][sysname][tier] = notify
+
+    err = saveConfig(smII)
+    if err:
+      return json.dumps({'error': err}, indent = 1)
+
+    log.info("Notify list (%s) updated for %s: %s" % (tier, sysname, notify))
     return json.dumps({'success': True}, indent = 1)
 
 
@@ -404,7 +594,7 @@ class WebInterface(BaseHTTPRequestHandler):
 
     plotdata = mon.getPlot()
 
-    return json.dumps({'meta': mt, "plotdata":plotdata, "trigger":mon.trgconf, "uuid":uuid}, indent = 1)
+    return json.dumps({'meta': mt, "plotdata":plotdata, "trigger":mon.trgconf, "filter":mon.fltconf, "options":mon.options, "uuid":uuid}, indent = 1)
 
 
 
@@ -615,6 +805,61 @@ class WebInterface(BaseHTTPRequestHandler):
         self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf8"))
         return
       self.wfile.write(bytes(self.jsonTrigger(uuid, trigger), "utf8"))
+      return
+
+    elif urlargs.path == "/filter":
+      self.send_response(200)
+      self.send_header('Content-type','application/json')
+      self.send_header('Access-Control-Allow-Origin','*')
+      self.end_headers()
+
+      content_length = int(self.headers.get('Content-Length', 0))
+      body = self.rfile.read(content_length)
+      try:
+        data = json.loads(body)
+        uuid = data['uuid']
+        flt  = data['filter']
+      except Exception as e:
+        self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf8"))
+        return
+      self.wfile.write(bytes(self.jsonFilter(uuid, flt), "utf8"))
+      return
+
+    elif urlargs.path == "/options":
+      self.send_response(200)
+      self.send_header('Content-type','application/json')
+      self.send_header('Access-Control-Allow-Origin','*')
+      self.end_headers()
+
+      content_length = int(self.headers.get('Content-Length', 0))
+      body = self.rfile.read(content_length)
+      try:
+        data = json.loads(body)
+        uuid    = data['uuid']
+        options = data['options']
+      except Exception as e:
+        self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf8"))
+        return
+      self.wfile.write(bytes(self.jsonOptions(uuid, options), "utf8"))
+      return
+
+    elif urlargs.path == "/notify":
+      self.send_response(200)
+      self.send_header('Content-type','application/json')
+      self.send_header('Access-Control-Allow-Origin','*')
+      self.end_headers()
+
+      content_length = int(self.headers.get('Content-Length', 0))
+      body = self.rfile.read(content_length)
+      try:
+        data = json.loads(body)
+        sysname = data['system']
+        notify  = data['notify'].strip()
+        tier    = data.get('tier', 'notify')
+      except Exception as e:
+        self.wfile.write(bytes(json.dumps({'error': str(e)}), "utf8"))
+        return
+      self.wfile.write(bytes(self.jsonNotify(sysname, notify, tier), "utf8"))
       return
 
     else:

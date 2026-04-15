@@ -313,15 +313,31 @@ class Monitor:
       self.system.ackCnt = (self.system.ackCnt % 2000) + 1
       self.system.acknowledge = True
 	  
+      isRepeat = self.lastTime is not None
       if (self.lastTime is None) or (newTime - self.lastTime >= timedelta(minutes=15)):
         self.lastTime = newTime
+
+        # Tier 1 always gets notified. Tier 2 only on repeat (15-min escalation).
+        try:
+          recipients = self.system.notify
+          if isRepeat and self.system.notify2:
+            combined = self.system.notify.split() + self.system.notify2.split()
+            recipients = " ".join(dict.fromkeys(combined))
+        except Exception as e:
+          log.warn("Error building recipient list, falling back to tier 1: %s" % e)
+          recipients = self.system.notify
+
         msg = MIMEMultipart('alternative')
         msg['Subject'] = "sysMon: Triggered for %s" % self.cache.pvname
         msg['From']    = 'noreply@gemini.edu'
-        msg['To']      = self.system.notify.replace(" ", ", ")
+        msg['To']      = recipients.replace(" ", ", ")
         report  = "<html>\n"
         report += " <body>\n"
         report += "  <h1> System Monitor Triggered </h1>\n"
+        if isRepeat and self.system.notify2:
+          report += "    <p><b>ESCALATED:</b> This alert has not been acknowledged after 15 minutes. Secondary recipients have been added.</p>"
+        elif isRepeat:
+          report += "    <p><b>REPEAT:</b> This alert has not been acknowledged after 15 minutes.</p>"
         report += "    <p> If you resolved this and re-enabled the alarm, or this appears to be a serious issue, please reply to ths email with a summary of your findings. Another alert will be sent every 15 minutes until this issue is acknowledged. To acknowledge this alert, go to sysmon and click the Acknowledge button next to the affected system. </p>"
         report += "  <table>"
         report += "   <tr>"
