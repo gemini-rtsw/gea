@@ -349,6 +349,9 @@ class WebInterface(BaseHTTPRequestHandler):
     if err:
       return json.dumps({'error': err}, indent = 1)
 
+    # Save old trigger for change notification
+    oldTrigger = dict(mon.trgconf)
+
     # Update in-memory trigger config
     mon.trgconf.clear()
     mon.trgconf.update(trigger)
@@ -378,6 +381,13 @@ class WebInterface(BaseHTTPRequestHandler):
       return json.dumps({'error': err}, indent = 1)
 
     log.info("Trigger updated for %s: %s" % (uuid, trigger))
+
+    # Send notification to primary + secondary recipients
+    try:
+      mon.sendSettingChangeNotification("trigger", oldTrigger, trigger)
+    except Exception as e:
+      log.warn("Failed to send trigger change notification: %s" % e)
+
     return json.dumps({'success': True}, indent = 1)
 
 
@@ -438,6 +448,9 @@ class WebInterface(BaseHTTPRequestHandler):
     if err:
       return json.dumps({'error': err}, indent = 1)
 
+    # Save old filter for change notification
+    oldFilter = dict(mon.fltconf)
+
     # Update in-memory filter config
     mon.fltconf.clear()
     mon.fltconf.update(flt)
@@ -467,6 +480,13 @@ class WebInterface(BaseHTTPRequestHandler):
       return json.dumps({'error': err}, indent = 1)
 
     log.info("Filter updated for %s: %s" % (uuid, flt))
+
+    # Send notification to primary + secondary recipients
+    try:
+      mon.sendSettingChangeNotification("filter", oldFilter, flt)
+    except Exception as e:
+      log.warn("Failed to send filter change notification: %s" % e)
+
     return json.dumps({'success': True}, indent = 1)
 
 
@@ -490,6 +510,9 @@ class WebInterface(BaseHTTPRequestHandler):
       if not isinstance(options[k], bool):
         return json.dumps({'error': "Option '%s' must be true or false" % k}, indent = 1)
 
+    # Save old options for change notification
+    oldOptions = dict(mon.options)
+
     # Update in-memory
     mon.options.clear()
     mon.options.update(options)
@@ -500,6 +523,13 @@ class WebInterface(BaseHTTPRequestHandler):
       return json.dumps({'error': err}, indent = 1)
 
     log.info("Options updated for %s: %s" % (uuid, options))
+
+    # Send notification to primary + secondary recipients
+    try:
+      mon.sendSettingChangeNotification("options", oldOptions, options)
+    except Exception as e:
+      log.warn("Failed to send options change notification: %s" % e)
+
     return json.dumps({'success': True}, indent = 1)
 
 

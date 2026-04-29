@@ -406,6 +406,52 @@ class Monitor:
 
 
 
+  def sendSettingChangeNotification(self, changeType, oldValue, newValue):
+    """
+      Send an email to primary+secondary lists when a setting changes.
+      changeType is a label like "trigger", "filter", or "options".
+    """
+    try:
+      recipients = self.system.notify or ""
+      if self.system.notify2:
+        combined = recipients.split() + self.system.notify2.split()
+        recipients = " ".join(dict.fromkeys(combined))
+    except Exception as e:
+      log.warn("Error building recipient list for %s change: %s" % (changeType, e))
+      recipients = self.system.notify
+
+    if not recipients:
+      log.info("No recipients for %s change notification on %s" % (changeType, self.pvname))
+      return
+
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = "sysMon: %s changed for %s" % (changeType.capitalize(), self.pvname)
+    msg['From']    = 'noreply@gemini.edu'
+    msg['To']      = recipients.replace(" ", ", ")
+    report  = "<html>\n <body>\n"
+    report += "  <h1> System Monitor %s Changed </h1>\n" % changeType.capitalize()
+    report += "  <table>"
+    report += "   <tr><td> system:     <td> %s" % self.system.sysname
+    report += "   <tr><td> pv:         <td> %s" % self.pvname
+    report += "   <tr><td> old %s: <td> %s" % (changeType, oldValue)
+    report += "   <tr><td> new %s: <td> %s" % (changeType, newValue)
+    report += "   <tr><td> time stamp: <td> %s" % datetime.now()
+    report += "  </table>"
+    report += " </body>\n</html>\n"
+    msg.attach(MIMEText(report, 'html'))
+
+    for N in range(1, 5):
+      try:
+        s = smtplib.SMTP('hbfsmtprelay-lv1')
+        s.send_message(msg)
+        s.quit()
+        log.info("{0} CHANGE EMAIL SENT {1} {2}".format(changeType.upper(), msg['To'], self.pvname))
+        break
+      except:
+        log.info("{0} CHANGE EMAIL SEND FAILED {1} Retry: {2}".format(changeType.upper(), msg['To'], N))
+        time.sleep(2)
+
+
   def getPlot(self):
     ty = self.cache.type
 
