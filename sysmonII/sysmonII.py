@@ -88,8 +88,10 @@ class sysmonII:
         m.system  = system
         m.doemail = js['doemail'] if 'doemail' in js else False
         m.uuid    = uuid
-        geaurl = self.getGeaLink(pvname)
-        m.geaurl  = geaurl
+        geaurl, geaServer, archName = self.getGeaLink(pvname)
+        m.geaurl       = geaurl
+        m.geaServer    = geaServer	# Base GEA web URL, e.g. "http://geanorth.hi.gemini.edu/"
+        m.geaArchName  = archName	# Archive name to pass as SYSTEMS= to plotterPage
         if m.options == None:
           m.options = {}
         if geaurl == None: m.options['noLink'] = True
@@ -104,6 +106,12 @@ class sysmonII:
         
 
   def getGeaLink(self, pvname):
+    """
+      Returns (url, geaServerBase, archiveName) for pvname, or (None, None, None)
+      if no archive contains it. The base URL and archive name are stashed on
+      the monitor so alert emails can re-hit the plotterPage CGI to grab the
+      same plot the user sees when clicking the link.
+    """
     import xmlrpc.client
 
     self.site     = os.environ['GEMINI_SITE'] if 'GEMINI_SITE' in os.environ else "MK"
@@ -116,18 +124,19 @@ class sysmonII:
     for archiver in dataServer.archiver.archives():
         if archiver['name'][0:1] == '-' or len(archiver['name']) < 2:
             continue
-    
+
         key  = archiver['key'];
         name = archiver['name'];
-    
-        try: 
+
+        try:
           matches = dataServer.archiver.names(key, pvname)
-          if matches: 
-            return "%s/pages/common/plotterPage?PATTERN=%s&SYSTEMS=%s" % (localserver, pvname, name)
+          if matches:
+            url = "%s/pages/common/plotterPage?PATTERN=%s&SYSTEMS=%s" % (localserver, pvname, name)
+            return url, localserver, name
         except:
           pass
 
-    return None
+    return None, None, None
     
   def sighandler(self, signum, frame):
   

@@ -14,6 +14,7 @@ import base64
 from enum import Enum
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 from PIL import Image, ImageDraw
 from Cache import pvType
 from datetime import datetime
@@ -70,7 +71,9 @@ class Monitor:
     self.desc     = monconf['description']
     self.failed   = False
     self.state    = State.UNINITIALIZED
-    self.geaurl   = None
+    self.geaurl   = None		# Plotter page URL embedded in alert emails
+    self.geaServer = None		# Base URL of the GEA web server, e.g. "http://geanorth.hi.gemini.edu/"
+    self.geaArchName = None		# Archive name (the SYSTEMS= query param on the plotter URL)
 
     if not self.doemail: log.warn("NOT SENDING EMAIL\'S {0}".format(self.doemail))
 
@@ -327,7 +330,27 @@ class Monitor:
           log.warn("Error building recipient list, falling back to tier 1: %s" % e)
           recipients = self.system.notify
 
-        msg = MIMEMultipart('alternative')
+        # Try to attach a "last few hours" plot inline. Prefer the GEA-archive
+        # plot (matches what users see when clicking the PV link); fall back to
+        # the in-memory PIL plot if the archive is unreachable or the PV isn't
+        # archived. If both fail we still send the alert without a plot.
+        plotBytes = None
+        try:
+          plotBytes = self.getGeaPlot(windowSecs=4 * 60 * 60)
+        except Exception as e:
+          log.warn("GEA plot failed for %s: %s" % (self.pvname, e))
+        if plotBytes is None:
+          try:
+            plotBytes = self.getPlot(windowSecs=4 * 60 * 60, size=(800, 200), returnBytes=True)
+          except Exception as e:
+            log.warn("Fallback PIL plot failed for %s: %s" % (self.pvname, e))
+
+        # If we have a plot, build a 'related' multipart so the inline image
+        # rides along with the HTML. Otherwise just send 'alternative'.
+        if plotBytes:
+          msg = MIMEMultipart('related')
+        else:
+          msg = MIMEMultipart('alternative')
         msg['Subject'] = "sysMon: Triggered for %s" % self.cache.pvname
         msg['From']    = 'noreply@gemini.edu'
         msg['To']      = recipients.replace(" ", ", ")
@@ -339,6 +362,8 @@ class Monitor:
         elif isRepeat:
           report += "    <p><b>REPEAT:</b> This alert has not been acknowledged after 15 minutes.</p>"
         report += "    <p> If you resolved this and re-enabled the alarm, or this appears to be a serious issue, please reply to ths email with a summary of your findings. Another alert will be sent every 15 minutes until this issue is acknowledged. To acknowledge this alert, go to sysmon and click the Acknowledge button next to the affected system. </p>"
+        if plotBytes:
+          report += "    <p><img src=\"cid:sysmonplot\" alt=\"recent values\" style=\"max-width:100%;height:auto;\"></p>"
         report += "  <table>"
         report += "   <tr>"
         report += "    <td> system:  <td> %s" % self.system.sysname
@@ -357,6 +382,11 @@ class Monitor:
         report += " </body>\n"
         report += "</html>\n"
         msg.attach(MIMEText(report, 'html'))
+        if plotBytes:
+          imgPart = MIMEImage(plotBytes, _subtype='png')
+          imgPart.add_header('Content-ID', '<sysmonplot>')
+          imgPart.add_header('Content-Disposition', 'inline', filename='sysmonplot.png')
+          msg.attach(imgPart)
 
         # while self.system.acknowledge:
         for N in range(1, 5):					# Try four times to send the email. See FR-72397
@@ -452,15 +482,26 @@ class Monitor:
         time.sleep(2)
 
 
-  def getPlot(self):
+  def getPlot(self, windowSecs=None, size=None, returnBytes=False):
+    """
+      Render a PNG plot of recent data.
+        windowSecs   - if set, force the outer (context) window to this many seconds
+                       instead of deriving it from the filter span. Used by alert
+                       emails to show a longer history (e.g., 4 hours).
+        size         - (width, height) in pixels. Defaults to (400, 100) for the GUI.
+        returnBytes  - if True, return raw PNG bytes (for email attachment). If False,
+                       return a data:image/png;base64,... URI (for the web GUI).
+    """
     ty = self.cache.type
 
     if ty != pvType.Integer and ty != pvType.Float and ty == pvType.Enum:		# Check if it's even plotable
       log.debug("TYtytytyty %s" % ty)
       return None
 
-    width  = 400.0
-    height = 100.0
+    if size is None:
+      size = (400, 100)
+    width  = float(size[0])
+    height = float(size[1])
     margin = 5.0		# 5 pixel margin
     widthM  = width  - margin * 2
     heightM = height - margin * 2
@@ -473,16 +514,21 @@ class Monitor:
 
 
     if 'null' in self.fltconf:
-        values, timestamps = self.cache.getTimeSlice(ct - 60 * 5)		# Just show five minutes worth.
+        outerSecs = windowSecs if windowSecs else 60 * 5
+        values, timestamps = self.cache.getTimeSlice(ct - outerSecs)
         v,      t,         = self.cache.getTimeSlice(ct - 60 * 4)
     else:
       if self.fltsecs:
-        values, timestamps = self.cache.getTimeSlice(ct - int(self.fltsecs * 1.5))
-        v,      t,         = self.cache.getTimeSlice(ct - int(self.fltsecs      ))
+        outerSecs = windowSecs if windowSecs else int(self.fltsecs * 1.5)
+        values, timestamps = self.cache.getTimeSlice(ct - outerSecs)
+        v,      t,         = self.cache.getTimeSlice(ct - int(self.fltsecs))
       else:
         if self.fltcnt == None: return None
-        values, timestamps = self.cache.getSlice(int(self.fltcnt * 1.5))
-        v,      t,         = self.cache.getSlice(int(self.fltcnt      )) 
+        if windowSecs:
+          values, timestamps = self.cache.getTimeSlice(ct - windowSecs)
+        else:
+          values, timestamps = self.cache.getSlice(int(self.fltcnt * 1.5))
+        v,      t,         = self.cache.getSlice(int(self.fltcnt      ))
 
     if len(values) <= 2: return None
 
@@ -529,7 +575,8 @@ class Monitor:
       yscale  = heightM / (Mx - Mn)
       yoffset = -Mn
 
-    d.rectangle([(int(((t[0] + xoffset) * xscale) + margin + .5), 1), (width - 2, height - 2)], fill="lightblue")
+    if len(t) > 0:
+      d.rectangle([(int(((t[0] + xoffset) * xscale) + margin + .5), 1), (width - 2, height - 2)], fill="lightblue")
 
 
 
@@ -572,8 +619,75 @@ class Monitor:
     d.line(l, fill="black")
 
     imBytArr = io.BytesIO()
-    img.save(imBytArr, format='PNG', optimize=True)
+    img.save(imBytArr, format='PNG', optimize=True, compress_level=9)
     img.close()
 
+    if returnBytes:
+      return imBytArr.getvalue()
     return "data:image/png;base64," + base64.b64encode(imBytArr.getvalue()).decode()
+
+
+  def getGeaPlot(self, windowSecs=4 * 60 * 60):
+    """
+      Fetch a plot of this monitor's PV from the GEA plotter page (the same one
+      users land on when clicking the PV link in the alert email). We hit the
+      plotterPage CGI with start/end times spanning the last windowSecs, parse
+      the resulting HTML for the generated PNG path, and download the image.
+      Returns PNG bytes on success, or None on any failure -- callers should
+      fall back to getPlot().
+    """
+    if not self.geaServer or not self.geaArchName:
+      return None
+
+    import urllib.request
+    import urllib.parse
+    import re
+    from datetime import datetime as _dt
+
+    end   = _dt.fromtimestamp(time.time())
+    start = _dt.fromtimestamp(time.time() - int(windowSecs))
+
+    # plotterPage expects month as a 3-letter abbreviation and the rest as
+    # zero-padded numerics (see GEATime.fromStartTimeDict).
+    months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    def _timeFields(prefix, dt):
+      return {
+        prefix + 'YEAR':   '%04d' % dt.year,
+        prefix + 'MONTH':  months[dt.month - 1],
+        prefix + 'DAY':    '%02d' % dt.day,
+        prefix + 'HOUR':   '%02d' % dt.hour,
+        prefix + 'MINUTE': '%02d' % dt.minute,
+        prefix + 'SECOND': '%02d' % dt.second,
+      }
+
+    params = {
+      'PATTERN': self.pvname,
+      'SYSTEMS': self.geaArchName,
+    }
+    params.update(_timeFields('START', start))
+    params.update(_timeFields('END',   end))
+
+    pageUrl = self.geaServer.rstrip('/') + '/pages/common/plotterPage?' + urllib.parse.urlencode(params)
+
+    try:
+      with urllib.request.urlopen(pageUrl, timeout=30) as resp:
+        html = resp.read().decode('utf-8', errors='replace')
+    except Exception as e:
+      log.warn("GEA plotterPage fetch failed for %s: %s" % (self.pvname, e))
+      return None
+
+    # The plotter inserts something like <img src="/wwwdata/<rand>.png"> into
+    # the response. Pick the first match that points into wwwdata.
+    m = re.search(r'<img[^>]+src=["\'](/wwwdata/[^"\']+\.(?:png|gif|jpg))["\']', html, re.IGNORECASE)
+    if not m:
+      log.warn("GEA plotterPage HTML had no wwwdata image for %s" % self.pvname)
+      return None
+
+    imgUrl = self.geaServer.rstrip('/') + m.group(1)
+    try:
+      with urllib.request.urlopen(imgUrl, timeout=30) as resp:
+        return resp.read()
+    except Exception as e:
+      log.warn("GEA plot image fetch failed for %s (%s): %s" % (self.pvname, imgUrl, e))
+      return None
 
