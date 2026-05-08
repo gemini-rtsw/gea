@@ -71,7 +71,9 @@ class Monitor:
     self.desc     = monconf['description']
     self.failed   = False
     self.state    = State.UNINITIALIZED
-    self.geaurl   = None
+    self.geaurl   = None		# Plotter page URL embedded in alert emails
+    self.geaServer = None		# Base URL of the GEA web server, e.g. "http://geanorth.hi.gemini.edu/"
+    self.geaArchName = None		# Archive name (the SYSTEMS= query param on the plotter URL)
 
     if not self.doemail: log.warn("NOT SENDING EMAIL\'S {0}".format(self.doemail))
 
@@ -328,14 +330,20 @@ class Monitor:
           log.warn("Error building recipient list, falling back to tier 1: %s" % e)
           recipients = self.system.notify
 
-        # Try to attach a "last few hours" plot inline. Best-effort: if the
-        # plot can't be rendered (PV is non-numeric, not enough cached data,
-        # PIL error, etc.) we still send the alert without it.
+        # Try to attach a "last few hours" plot inline. Prefer the GEA-archive
+        # plot (matches what users see when clicking the PV link); fall back to
+        # the in-memory PIL plot if the archive is unreachable or the PV isn't
+        # archived. If both fail we still send the alert without a plot.
         plotBytes = None
         try:
-          plotBytes = self.getPlot(windowSecs=4 * 60 * 60, size=(800, 200), returnBytes=True)
+          plotBytes = self.getGeaPlot(windowSecs=4 * 60 * 60)
         except Exception as e:
-          log.warn("Could not render alert plot for %s: %s" % (self.pvname, e))
+          log.warn("GEA plot failed for %s: %s" % (self.pvname, e))
+        if plotBytes is None:
+          try:
+            plotBytes = self.getPlot(windowSecs=4 * 60 * 60, size=(800, 200), returnBytes=True)
+          except Exception as e:
+            log.warn("Fallback PIL plot failed for %s: %s" % (self.pvname, e))
 
         # If we have a plot, build a 'related' multipart so the inline image
         # rides along with the HTML. Otherwise just send 'alternative'.
@@ -617,4 +625,69 @@ class Monitor:
     if returnBytes:
       return imBytArr.getvalue()
     return "data:image/png;base64," + base64.b64encode(imBytArr.getvalue()).decode()
+
+
+  def getGeaPlot(self, windowSecs=4 * 60 * 60):
+    """
+      Fetch a plot of this monitor's PV from the GEA plotter page (the same one
+      users land on when clicking the PV link in the alert email). We hit the
+      plotterPage CGI with start/end times spanning the last windowSecs, parse
+      the resulting HTML for the generated PNG path, and download the image.
+      Returns PNG bytes on success, or None on any failure -- callers should
+      fall back to getPlot().
+    """
+    if not self.geaServer or not self.geaArchName:
+      return None
+
+    import urllib.request
+    import urllib.parse
+    import re
+    from datetime import datetime as _dt
+
+    end   = _dt.fromtimestamp(time.time())
+    start = _dt.fromtimestamp(time.time() - int(windowSecs))
+
+    # plotterPage expects month as a 3-letter abbreviation and the rest as
+    # zero-padded numerics (see GEATime.fromStartTimeDict).
+    months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    def _timeFields(prefix, dt):
+      return {
+        prefix + 'YEAR':   '%04d' % dt.year,
+        prefix + 'MONTH':  months[dt.month - 1],
+        prefix + 'DAY':    '%02d' % dt.day,
+        prefix + 'HOUR':   '%02d' % dt.hour,
+        prefix + 'MINUTE': '%02d' % dt.minute,
+        prefix + 'SECOND': '%02d' % dt.second,
+      }
+
+    params = {
+      'PATTERN': self.pvname,
+      'SYSTEMS': self.geaArchName,
+    }
+    params.update(_timeFields('START', start))
+    params.update(_timeFields('END',   end))
+
+    pageUrl = self.geaServer.rstrip('/') + '/pages/common/plotterPage?' + urllib.parse.urlencode(params)
+
+    try:
+      with urllib.request.urlopen(pageUrl, timeout=30) as resp:
+        html = resp.read().decode('utf-8', errors='replace')
+    except Exception as e:
+      log.warn("GEA plotterPage fetch failed for %s: %s" % (self.pvname, e))
+      return None
+
+    # The plotter inserts something like <img src="/wwwdata/<rand>.png"> into
+    # the response. Pick the first match that points into wwwdata.
+    m = re.search(r'<img[^>]+src=["\'](/wwwdata/[^"\']+\.(?:png|gif|jpg))["\']', html, re.IGNORECASE)
+    if not m:
+      log.warn("GEA plotterPage HTML had no wwwdata image for %s" % self.pvname)
+      return None
+
+    imgUrl = self.geaServer.rstrip('/') + m.group(1)
+    try:
+      with urllib.request.urlopen(imgUrl, timeout=30) as resp:
+        return resp.read()
+    except Exception as e:
+      log.warn("GEA plot image fetch failed for %s (%s): %s" % (self.pvname, imgUrl, e))
+      return None
 
