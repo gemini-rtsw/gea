@@ -8897,7 +8897,8 @@ class HTMLDynChanTable(HTMLDynTable):
         self._queryStrPairs=queryStrPairs or {}
         self._useSubTables=useSubTables
         self._autoTitle=autoTitle    #Determines whether to create a titile plot  based on the section/chan name automatically.
-        
+        self._pageFile=dataStr       #Remember the page .channels filename, so per-section edit controls know which page they act on.
+
         # dataStr that comes in is actually the filename of the real data. Replace it with the file's contents.
 
         #General GEAHtml object init stuff.
@@ -9156,7 +9157,18 @@ updateFixedTimeRange();
             self.parsedDataList.append(util.Holder(queryStrPairs=query, humanName=name, chanOrPat=value.strip()))
         
         #Add the section titile, and make sure it spans all columns.
-        self._table.add_array_after_last_row([sectionName], {'class':secTitleCssClass})   
+        #Append a small per-section "edit" control so a user can add/delete
+        #channels in exactly this section straight from the page.
+        titleHtml=sectionName
+        if sectionName:
+            editUrl='%s/pages/common/editChannelsPage?PAGE=%s&SECTION=%s' % (
+                GEAVars.dispatchScript,
+                urllib.quote(self._pageFile),
+                urllib.quote(sectionName))
+            titleHtml=('%s &nbsp;<a class="editchan" href="%s" '
+                       'title="Add or remove channels in this section">[edit]</a>'
+                       % (sectionName, editUrl))
+        self._table.add_array_after_last_row([titleHtml], {'class':secTitleCssClass})
         self._allColSpanIndex.append(self._table.getmaxRow())
             
         #Create an HTML table with the all the items. 
