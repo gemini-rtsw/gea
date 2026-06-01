@@ -47,6 +47,8 @@ class EditChannelsPage(GeaBasePage):
     """Per-section add/delete of GEA channels."""
 
     def _assemblePage(self, topMenuList=None):
+        # Render bare (no side menu/header) -- this opens in a small popup.
+        self.standAlone = True
         GeaBasePage._assemblePage(self, topMenuList=topMenuList)
 
     def _getLocalRequests(self):

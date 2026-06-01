@@ -115,15 +115,22 @@ def page_sections(channels_path):
 
 
 def resolve_page(name):
-    """Find <name>(.channels) under pages/ -- single unambiguous match."""
+    """Resolve a page file. `name` is normally the path GEAHtml uses, relative
+    to pages/ (e.g. 'systems/pcsPage.channels'). Fall back to a basename walk."""
     if os.path.isabs(name):
         return name
-    pagesdir = os.path.join(_conf_dir(), "pages")
     want = name if name.endswith(".channels") else name + ".channels"
+    pagesdir = os.path.join(_conf_dir(), "pages")
+    # First: direct join (GEAHtml reads pages exactly this way).
+    direct = os.path.join(pagesdir, want)
+    if os.path.isfile(direct):
+        return direct
+    # Fall back: search by basename anywhere under pages/.
+    base = os.path.basename(want)
     hits = []
     for root, _dirs, files in os.walk(pagesdir):
-        if want in files:
-            hits.append(os.path.join(root, want))
+        if base in files:
+            hits.append(os.path.join(root, base))
     if not hits:
         raise ChannelError("Page file '%s' not found" % want)
     if len(hits) > 1:

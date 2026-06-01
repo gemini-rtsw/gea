@@ -9165,7 +9165,10 @@ updateFixedTimeRange();
                 GEAVars.dispatchScript,
                 urllib.quote(self._pageFile),
                 urllib.quote(sectionName))
-            titleHtml=('%s &nbsp;<a class="editchan" href="%s" '
+            titleHtml=('%s &nbsp;<a class="editchan" href="#" '
+                       'onclick="window.open(\'%s\',\'editchan\','
+                       '\'width=560,height=560,scrollbars=yes,resizable=yes\');'
+                       'return false;" '
                        'title="Add or remove channels in this section">[edit]</a>'
                        % (sectionName, editUrl))
         self._table.add_array_after_last_row([titleHtml], {'class':secTitleCssClass})
