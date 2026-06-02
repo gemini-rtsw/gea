@@ -126,6 +126,12 @@ class EditChannelsPage(GeaBasePage):
         here = GEAVars.dispatchScript + "/pages/common/editChannelsPage"
 
         h = []
+        # Emit a COMPLETE html document. In standAlone mode the GEA wrapper
+        # gives no <html>/<body>, so in an iframe the content collapses (only
+        # the first line showed). A full doc with html,body{height:auto} fixes
+        # the clipping.
+        h.append('<html><head><meta charset="utf-8"/>'
+                 '<style>html,body{height:auto;margin:0;}</style></head><body>')
         # Full-width, readable layout that scales with the window.
         h.append('<style>'
                  '.ecwrap{font-family:sans-serif;margin:1em;}'
@@ -218,6 +224,7 @@ function resetForm(){
 }
 </script>""")
         h.append('</div>')
+        h.append('</body></html>')
         return "\n".join(h)
 
 
