@@ -329,8 +329,9 @@ function submitChan(){
         + '&LABEL='  + encodeURIComponent(gv('f_label'))
         + '&FORMAT=' + encodeURIComponent(gv('f_fmt'))
         + '&PERIOD=' + encodeURIComponent(gv('f_period'))
-        + '&MODE='   + encodeURIComponent(gv('f_mode'));
-  window.location = u;
+        + '&MODE='   + encodeURIComponent(gv('f_mode'))
+        + '&_=' + (new Date()).getTime();   // cache-bust: force a real reload
+  window.location.href = u;
 }
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
