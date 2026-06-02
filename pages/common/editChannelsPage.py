@@ -30,6 +30,10 @@ def _js(s):
     """Escape a value for safe inclusion inside a single-quoted JS string."""
     return (s or "").replace("\\", "\\\\").replace("'", "\\'").replace('"', "&quot;")
 
+def _js_str(s):
+    """Return a quoted JS string literal for s (e.g. 'foo' -> \"'foo'\")."""
+    return "'" + _js(s) + "'"
+
 
 def _archiver_for_page(pagefile):
     """A page file 'systems/pcsPage.channels' archives via the 'pcs' engine.
@@ -94,13 +98,6 @@ class EditChannelsPage(GeaBasePage):
         # action's params arrive in a later request iteration (the two-click bug).
         if page and section and (self._acted or not has_action):
             self._renderOnce(page, section)
-
-        try:
-            import sys
-            sys.stderr.write("EDITCHAN this_req=%r merged=%r acted=%r rendered=%r\n"
-                % (dict(request), p, self._acted, getattr(self, "_rendered", False)))
-        except Exception:
-            pass
 
     def _doActionMerged(self, p, page, section):
         """Perform the one add/edit/delete/setsec/restart. `p` is the merged
@@ -274,30 +271,28 @@ class EditChannelsPage(GeaBasePage):
                  'see them.</p>')
         h.append('<hr/>')
 
-        # One form, used for both Add and Edit. 'edit' links flip it to edit mode
-        # via JS (set the hidden mode field + the action field name + values).
+        # NO <form>. Add/Edit build a URL and navigate -- the exact mechanism
+        # the 'delete' link uses, which works in one shot. (A GET <form> submit
+        # was getting split/mishandled, making Add need two clicks.)
         h.append('<h4 id="formtitle">Add a channel to this section</h4>')
-        h.append('<form class="ecform" method="GET" action="%s">' % here)
-        h.append('<input type="hidden" name="PAGE" value="%s"/>' % page)
-        h.append('<input type="hidden" name="SECTION" value="%s"/>' % section)
+        h.append('<input type="hidden" id="f_page" value="%s"/>' % page)
+        h.append('<input type="hidden" id="f_section" value="%s"/>' % section)
         h.append('<table style="width:100%;max-width:640px;">')
-        # The action field: name="ADD" by default; edit mode renames it to EDIT.
         h.append('<tr><td style="width:7em;">PV name:</td>'
-                 '<td><input type="text" id="f_pv" name="ADD" '
-                 'placeholder="m1:x:y.VAL"/></td></tr>')
+                 '<td><input type="text" id="f_pv" placeholder="m1:x:y.VAL"/></td></tr>')
         h.append('<tr><td>Label:</td>'
-                 '<td><input type="text" id="f_label" name="LABEL"/></td></tr>')
-        h.append('<tr><td>Display as:</td><td><select id="f_fmt" name="FORMAT">'
+                 '<td><input type="text" id="f_label"/></td></tr>')
+        h.append('<tr><td>Display as:</td><td><select id="f_fmt">'
                  '<option value="Plot">Plot</option>'
                  '<option value="Spreadsheet">Spreadsheet</option></select></td></tr>')
         h.append('<tr><td>Period (s):</td>'
-                 '<td><input type="text" id="f_period" name="PERIOD" value="1" '
-                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode" name="MODE">'
+                 '<td><input type="text" id="f_period" value="1" '
+                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode">'
                  '<option>Monitor</option><option>Scan</option></select></td></tr>')
         h.append('</table>')
-        h.append('<input type="submit" id="f_submit" value="Add channel"/> '
+        h.append('<input type="button" id="f_submit" value="Add channel" '
+                 'onclick="submitChan();"/> '
                  '<input type="button" value="Clear" onclick="resetForm();"/>')
-        h.append('</form>')
         # Show the outcome of the last action HERE, by the button -- the list can
         # be long, so a message at the top would scroll out of view.
         if note:
@@ -318,24 +313,42 @@ class EditChannelsPage(GeaBasePage):
                      'style="font-size:1.1em;">'
                      '&#9888; <b>Restart archiver %s now</b></a></div>'
                      % (resturl, archiver, archiver))
-        # JS: fillEdit pre-fills + flips the form to edit; resetForm restores add.
+        # JS: Add/Edit build a URL and navigate (same as delete). A module-level
+        # _editMode flag picks ADD vs EDIT. No form, no submit, no splitting.
         h.append("""<script type="text/javascript">
+var _editMode = false;
+function gv(id){var e=document.getElementById(id);return e?e.value:'';}
 function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
+function submitChan(){
+  var pv=gv('f_pv');
+  if(!pv){ alert('Enter a PV name.'); return; }
+  var base=%s;
+  var u = base + '?PAGE=' + encodeURIComponent(gv('f_page'))
+        + '&SECTION=' + encodeURIComponent(gv('f_section'))
+        + (_editMode ? '&EDIT=' : '&ADD=') + encodeURIComponent(pv)
+        + '&LABEL='  + encodeURIComponent(gv('f_label'))
+        + '&FORMAT=' + encodeURIComponent(gv('f_fmt'))
+        + '&PERIOD=' + encodeURIComponent(gv('f_period'))
+        + '&MODE='   + encodeURIComponent(gv('f_mode'));
+  window.location = u;
+}
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
   setField('f_fmt',fmt||'Plot'); setField('f_period',period||'1'); setField('f_mode',mode||'Monitor');
-  var pvf=document.getElementById('f_pv'); pvf.name='EDIT'; pvf.readOnly=true;
+  _editMode = true;
+  var pvf=document.getElementById('f_pv'); pvf.readOnly=true;
   document.getElementById('f_submit').value='Save changes';
   document.getElementById('formtitle').innerHTML='Edit channel: '+pv;
   pvf.focus();
 }
 function resetForm(){
-  var pvf=document.getElementById('f_pv'); pvf.name='ADD'; pvf.readOnly=false; pvf.value='';
+  _editMode = false;
+  var pvf=document.getElementById('f_pv'); pvf.readOnly=false; pvf.value='';
   setField('f_label',''); setField('f_fmt','Plot'); setField('f_period','1'); setField('f_mode','Monitor');
   document.getElementById('f_submit').value='Add channel';
   document.getElementById('formtitle').innerHTML='Add a channel to this section';
 }
-</script>""")
+</script>""" % _js_str(here))
         h.append('</div>')
         h.append('</body></html>')
         return "\n".join(h)
