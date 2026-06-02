@@ -300,17 +300,15 @@ class EditChannelsPage(GeaBasePage):
                  '<option>Monitor</option><option>Scan</option></select></td></tr>'
                  % (sync, sync))
         h.append('</table>')
-        # Add/Save. The href is kept in sync with the fields by syncAdd() so its
-        # value is always the correct add/edit URL. The two-click bug: the delete
-        # link has a STATIC href literal in the HTML and refreshes first-click,
-        # but Add's href is set by JS (a.href=...), and on the first click the
-        # iframe follows the STALE attribute (the bare base URL = empty form, so
-        # "nothing happens") -- only the second click honours the JS value. So
-        # canAdd() does not rely on following this link in the iframe at all: it
-        # reads the freshly-synced href in JS and asks the PARENT to reload the
-        # iframe via geaEditChannels() (which sets iframe.src and always loads --
-        # it's how the dialog opens). The href is kept correct only as a no-JS
-        # fallback. Start it at the base URL so it's never '#'.
+        # Add/Save is a REAL <a> whose href is kept in sync with the form fields
+        # (syncAdd, run on every field change + once at load). Clicking it is then
+        # a plain native link navigation -- byte-for-byte the same mechanism as the
+        # delete link, which always refreshes the iframe on the first click. We do
+        # NOT build the URL in onclick or assign window.location: every JS-driven
+        # variant of that needed two clicks (the first click followed the stale
+        # href / was swallowed by the '#' fragment). The href is live, so there is
+        # nothing to compute at click time. onclick only blocks submit on an empty
+        # PV. Start href at the base URL so it's never '#'.
         h.append('<a id="f_submit" href="%s" onclick="return canAdd();" '
                  'style="display:inline-block;padding:5px 14px;border:1px solid '
                  '#888;background:#eee;text-decoration:none;color:#000;">'
@@ -358,23 +356,11 @@ function syncAdd(){
     + '&MODE=' + encodeURIComponent(gv('f_mode'));
 }
 function canAdd(){
+  // The href is already correct (kept live by syncAdd). Only guard empty PV;
+  // syncAdd once more here in case a value changed without firing an event.
   if(!gv('f_pv')){ alert('Enter a PV name.'); return false; }
   syncAdd();
-  var a=document.getElementById('f_submit');
-  var u=a?a.href:'';
-  // Navigating THIS iframe in place (a real <a> follow, or window.location)
-  // gets dropped on the first click and only takes on the second -- the long-
-  // standing two-click bug. The dialog is opened by the PARENT setting our
-  // iframe's .src (geaEditChannels), and THAT always loads. So refresh the same
-  // way: have the parent reset our src to the new URL. Fall back to a normal
-  // link follow if we're somehow not framed.
-  try{
-    if(window.parent && window.parent.geaEditChannels && window.parent!==window){
-      window.parent.geaEditChannels(u);
-      return false;   // parent reloads the iframe; don't also navigate in-place
-    }
-  }catch(e){}
-  return true;        // not framed: follow the live link natively
+  return true;   // follow the live link natively, exactly like delete
 }
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
