@@ -52,19 +52,42 @@ class EditChannelsPage(GeaBasePage):
     """Per-section add/delete of GEA channels."""
 
     def _assemblePage(self, topMenuList=None):
-        # Render bare (no side menu/header) -- this opens in a small popup.
+        # Render bare (no side menu/header) -- this opens in an iframe modal.
         self.standAlone = True
         GeaBasePage._assemblePage(self, topMenuList=topMenuList)
+        self._acted = False          # guard: act on at most one request
+        self._action_note = None     # outcome message to show above the listing
 
     def _getLocalRequests(self):
         # Always process, even with no extra request keys, so the listing renders.
         return RequestCollection({None: Request()})
 
     def _processRequest(self, request, stream):
-        html = self.html
-
+        # GEA's run() may call this once PER request in the collection (the real
+        # query-string request AND our empty local request). Two bugs came from
+        # that: the action ran/rendered multiple times (double-add; stale list).
+        # Fix: ACT at most once (guarded by self._acted, only on the request
+        # that actually carries params), and RENDER the listing exactly once
+        # (in _renderOnce, also guarded). So the displayed list is always a
+        # single fresh read taken AFTER the write.
         page    = request.get("PAGE", "")
         section = request.get("SECTION", "")
+
+        # An "action" request is one carrying a verb param. The empty local
+        # request has none -> it only triggers the (guarded) render, never a write.
+        action_keys = ("ADD", "EDIT", "DEL", "SETSEC", "RESTART")
+        has_action = any(request.get(k, "") for k in action_keys)
+
+        if page and section and has_action and not self._acted:
+            self._acted = True
+            self._action_note = self._doAction(request, page, section)
+
+        # Render the listing once (after any action above has written to disk).
+        self._renderOnce(page, section)
+
+    def _doAction(self, request, page, section):
+        """Perform the one add/edit/delete/setsec/restart. Returns a note str."""
+        archiver = _archiver_for_page(page)
         add_pv  = request.get("ADD", "")
         del_pv  = request.get("DEL", "")
         edit_pv = request.get("EDIT", "")
@@ -72,42 +95,34 @@ class EditChannelsPage(GeaBasePage):
         label   = request.get("LABEL", "")
         period  = request.get("PERIOD", "1")
         mode    = request.get("MODE", "Monitor")
-        setsec  = request.get("SETSEC", "")     # "1" -> save section layout
-        restart = request.get("RESTART", "")    # "1" -> restart the archiver now
-
-        if not page or not section:
-            html.doc.append("<p>Missing PAGE or SECTION.</p>")
-            return
-
-        archiver = _archiver_for_page(page)
+        setsec  = request.get("SETSEC", "")
+        restart = request.get("RESTART", "")
 
         def _pending(r, msg):
-            # Save did not restart; tell the user a restart is pending if needed.
             if r.get("restarted"):
                 return msg + " " + (r.get("restart_info") or "archiver restarted")
             if r.get("restart_needed"):
                 return msg + " NOT yet archived -- click 'Restart archiver' to apply."
             return msg
 
-        # Handle an action, report the outcome.
         try:
             if restart:
                 info = gea_channel.restart_archiver(archiver)
-                stream.write("Restarting archiver '%s': %s" % (archiver, info))
+                return "Restarting archiver '%s': %s" % (archiver, info)
             elif add_pv:
                 r = gea_channel.add_channel(archiver, add_pv, period=period,
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
-                stream.write(_pending(r, "Saved '%s' to '%s'." % (r["pv"], section)))
+                return _pending(r, "Saved '%s' to '%s'." % (r["pv"], section))
             elif edit_pv:
                 r = gea_channel.edit_channel(archiver, edit_pv, period=period,
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
-                stream.write(_pending(r, "Updated '%s'." % r["pv"]))
+                return _pending(r, "Updated '%s'." % r["pv"])
             elif del_pv:
                 r = gea_channel.delete_channel(archiver, del_pv,
                         page=page, section=section)
-                stream.write(_pending(r, "Deleted '%s' from '%s'." % (r["pv"], section)))
+                return _pending(r, "Deleted '%s' from '%s'." % (r["pv"], section))
             elif setsec:
                 chpath = gea_channel.resolve_page(page)
                 vals = {"ITEMSPERROW":   request.get("ITEMSPERROW", ""),
@@ -115,15 +130,29 @@ class EditChannelsPage(GeaBasePage):
                         "CSSCLASS":      request.get("CSSCLASS", ""),
                         "QUERYSTRPAIRS": request.get("QUERYSTRPAIRS", "")}
                 gea_channel.set_section_settings(chpath, section, vals)
-                stream.write("Section layout updated for '%s' (display only; "
-                             "refresh the page to see it)." % section)
+                return ("Section layout updated for '%s' (display only; refresh "
+                        "the page to see it)." % section)
         except gea_channel.ChannelError, e:
-            stream.write("Error: %s (no changes kept)" % e)
+            return "Error: %s (no changes kept)" % e
         except Exception, e:
-            stream.write("Unexpected error: %s (no changes kept)" % e)
+            return "Unexpected error: %s (no changes kept)" % e
 
-        # Render the section's current channels + the add/edit form.
-        html.doc.append(self._render(page, section, archiver))
+    def _renderOnce(self, page, section):
+        """Append the listing exactly once, no matter how many requests run."""
+        if getattr(self, "_rendered", False):
+            return
+        self._rendered = True
+        if not page or not section:
+            self.html.doc.append("<p>Missing PAGE or SECTION.</p>")
+            return
+        archiver = _archiver_for_page(page)
+        note = self._action_note
+        body = self._render(page, section, archiver)
+        if note:
+            body = ('<div style="margin:1em;padding:6px;background:#e8f0ff;'
+                    'border:1px solid #aac;font-family:sans-serif;">%s</div>%s'
+                    % (note, body))
+        self.html.doc.append(body)
 
     def _render(self, page, section, archiver):
         try:
