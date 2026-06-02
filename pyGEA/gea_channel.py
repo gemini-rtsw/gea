@@ -297,12 +297,13 @@ def resolve_page(name):
 # --------------------------------------------------------------------------
 
 def add_channel(archiver, pv, period=1, mode="Monitor",
-                page=None, section=None, fmt=None, label=None):
+                page=None, section=None, fmt=None, label=None, restart=False):
     """
-    Run the runbook for one PV. `page`/`section` are optional (display side);
-    if omitted, only the archiver side is touched. Returns a dict describing
-    what happened, including a 'warnings' list. Raises ChannelError on failure
-    (with both files rolled back).
+    Add one PV. Writes config/display files and runs update_config. By default
+    it does NOT restart the archiver (so you can add many channels first); pass
+    restart=True (or call restart_archiver() once at the end) to apply them.
+    `restart_needed` in the result is True when a restart is pending (a new PV
+    was added to the .cnfg). Raises ChannelError on failure (files rolled back).
     """
     pv = (pv or "").strip()
     if archiver not in list_archivers():
@@ -355,17 +356,27 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
             _restore(cnfg_path_, cnfg_bak)
         raise
 
-    # Files are committed + update_config succeeded. Now trigger the full
-    # restart in the background (only needed when the .cnfg actually changed).
+    # Files committed + update_config done. A restart is needed iff the .cnfg
+    # changed -- but only do it now if asked. Otherwise report it as pending so
+    # the UI can let the user batch several adds and restart once.
     restart_info = None
-    if need_cnfg:
+    if need_cnfg and restart:
         restart_info = restart_one_engine(archiver)
 
     return {
         "archiver": archiver, "pv": pv, "period": period, "mode": mode,
-        "restart_triggered": need_cnfg, "restart_info": restart_info,
+        "restart_needed": need_cnfg, "restarted": bool(need_cnfg and restart),
+        "restart_info": restart_info,
         "calist": cal, "page": page, "section": section, "warnings": warnings,
     }
+
+
+def restart_archiver(archiver):
+    """Restart just this one archiver (the per-engine cycle). Call this once
+    after a batch of add/edit/delete saves to apply them. Returns a status str."""
+    if archiver not in list_archivers():
+        raise ChannelError("Unknown archiver '%s'" % archiver)
+    return restart_one_engine(archiver)
 
 
 def cnfg_meta(archiver):
@@ -438,11 +449,10 @@ def section_channels(channels_path, section, archiver=None):
     return out
 
 
-def delete_channel(archiver, pv, page=None, section=None):
+def delete_channel(archiver, pv, page=None, section=None, restart=False):
     """
-    Remove a PV's display line from a page section (and/or its .cnfg line).
-    If page/section given, removes the matching display line. If `archiver`
-    given and the PV is archived, also removes it from the .cnfg and restarts.
+    Remove a PV's display line from a page section and (if archived) its .cnfg
+    line. Does NOT restart unless restart=True; reports restart_needed instead.
     All-or-nothing with .bak rollback. Returns a summary dict.
     """
     pv = (pv or "").strip()
@@ -474,18 +484,20 @@ def delete_channel(archiver, pv, page=None, section=None):
             _restore(cnfg_path_, cnfg_bak)
         raise
 
-    restart_info = restart_one_engine(archiver) if archived else None
+    restart_info = restart_one_engine(archiver) if (archived and restart) else None
     return {"archiver": archiver, "pv": pv, "page": page, "section": section,
-            "restart_triggered": bool(archived), "restart_info": restart_info}
+            "restart_needed": bool(archived), "restarted": bool(archived and restart),
+            "restart_info": restart_info}
 
 
 def edit_channel(archiver, pv, period=None, mode=None,
-                 page=None, section=None, fmt=None, label=None):
+                 page=None, section=None, fmt=None, label=None, restart=False):
     """
     Change an existing channel in place: rewrite its display line (label/format)
     in the page section, and its .cnfg line (period/mode). The PV name itself is
-    not changed (changing it is a delete + add). Restarts the archiver only if
-    period/mode actually changed. All-or-nothing with .bak rollback.
+    not changed (changing it is a delete + add). A restart is needed only if
+    period/mode changed, and only happens if restart=True (else reported as
+    pending). All-or-nothing with .bak rollback.
     """
     pv = (pv or "").strip()
     if not pv:
@@ -536,9 +548,10 @@ def edit_channel(archiver, pv, period=None, mode=None,
             _restore(cnfg_path_, cnfg_bak)
         raise
 
-    restart_info = restart_one_engine(archiver) if cnfg_changed else None
+    restart_info = restart_one_engine(archiver) if (cnfg_changed and restart) else None
     return {"archiver": archiver, "pv": pv, "page": page, "section": section,
-            "restart_triggered": cnfg_changed, "restart_info": restart_info}
+            "restart_needed": cnfg_changed, "restarted": bool(cnfg_changed and restart),
+            "restart_info": restart_info}
 
 
 def _display_line(pv, fmt, label):

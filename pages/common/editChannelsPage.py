@@ -73,6 +73,7 @@ class EditChannelsPage(GeaBasePage):
         period  = request.get("PERIOD", "1")
         mode    = request.get("MODE", "Monitor")
         setsec  = request.get("SETSEC", "")     # "1" -> save section layout
+        restart = request.get("RESTART", "")    # "1" -> restart the archiver now
 
         if not page or not section:
             html.doc.append("<p>Missing PAGE or SECTION.</p>")
@@ -80,33 +81,33 @@ class EditChannelsPage(GeaBasePage):
 
         archiver = _archiver_for_page(page)
 
-        # Handle an add/delete/edit action first, report the outcome.
+        def _pending(r, msg):
+            # Save did not restart; tell the user a restart is pending if needed.
+            if r.get("restarted"):
+                return msg + " " + (r.get("restart_info") or "archiver restarted")
+            if r.get("restart_needed"):
+                return msg + " NOT yet archived -- click 'Restart archiver' to apply."
+            return msg
+
+        # Handle an action, report the outcome.
         try:
-            if add_pv:
+            if restart:
+                info = gea_channel.restart_archiver(archiver)
+                stream.write("Restarting archiver '%s': %s" % (archiver, info))
+            elif add_pv:
                 r = gea_channel.add_channel(archiver, add_pv, period=period,
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
-                note = "Added '%s' to '%s'." % (r["pv"], section)
-                if r.get("restart_triggered"):
-                    note += " %s" % r.get("restart_info", "")
-                for w in r.get("warnings", []):
-                    note += " " + w
-                stream.write(note)
+                stream.write(_pending(r, "Saved '%s' to '%s'." % (r["pv"], section)))
             elif edit_pv:
                 r = gea_channel.edit_channel(archiver, edit_pv, period=period,
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
-                note = "Updated '%s'." % r["pv"]
-                if r.get("restart_triggered"):
-                    note += " %s" % r.get("restart_info", "")
-                stream.write(note)
+                stream.write(_pending(r, "Updated '%s'." % r["pv"]))
             elif del_pv:
                 r = gea_channel.delete_channel(archiver, del_pv,
                         page=page, section=section)
-                note = "Deleted '%s' from '%s'." % (r["pv"], section)
-                if r.get("restart_triggered"):
-                    note += " %s" % r.get("restart_info", "")
-                stream.write(note)
+                stream.write(_pending(r, "Deleted '%s' from '%s'." % (r["pv"], section)))
             elif setsec:
                 chpath = gea_channel.resolve_page(page)
                 vals = {"ITEMSPERROW":   request.get("ITEMSPERROW", ""),
@@ -158,6 +159,20 @@ class EditChannelsPage(GeaBasePage):
         h.append("<p>Page: <code>%s</code>" % page)
         h.append("&nbsp; Archiver: <code>%s</code></p>"
                  % (archiver or "(none -- display only)"))
+
+        # Standalone Restart button. Saving channels does NOT restart; you can
+        # add/edit/delete several, then click this once to apply them all.
+        if archiver:
+            resturl = "%s?%s" % (here, qp(PAGE=page, SECTION=section, RESTART="1"))
+            h.append('<div style="margin:0 0 1em 0;padding:6px;background:#fff7e0;'
+                     'border:1px solid #e0c060;">'
+                     'Saving a new/changed channel writes the config but does '
+                     '<b>not</b> restart the archiver. Add everything you need, '
+                     'then apply it all at once: &nbsp;'
+                     '<a href="%s" onclick="return confirm('
+                     "'Restart archiver %s now? (a few seconds)')\">"
+                     '<b>Restart archiver %s</b></a></div>'
+                     % (resturl, archiver, archiver))
 
         h.append('<table class="ectbl">')
         h.append("<tr><th>Channel</th><th>Label</th><th>Display</th>"
