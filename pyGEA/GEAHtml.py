@@ -8940,24 +8940,39 @@ function geaEditChannels(url)
         ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;'
             + 'background:rgba(0,0,0,0.5);z-index:10000;';
         var box = document.createElement('div');
-        // Use plain top/left/right/bottom insets (no calc/transform) so it works
-        // on older browsers too.
-        box.style.cssText = 'position:absolute;top:5%;left:5%;right:5%;bottom:5%;'
-            + 'background:#fff;border:1px solid #444;';
+        box.id = 'geaEditBox';
+        box.style.cssText = 'position:absolute;background:#fff;border:1px solid #444;';
         var bar = document.createElement('div');
         bar.style.cssText = 'background:#eee;padding:4px 8px;text-align:right;'
-            + 'font-family:sans-serif;border-bottom:1px solid #ccc;height:20px;';
+            + 'font-family:sans-serif;border-bottom:1px solid #ccc;';
         bar.innerHTML = '<a href="#" onclick="geaCloseEdit();return false;" '
             + 'style="text-decoration:none;font-weight:bold;">close X</a>';
         var ifr = document.createElement('iframe');
         ifr.id = 'geaEditFrame';
-        ifr.style.cssText = 'position:absolute;top:29px;left:0;right:0;bottom:0;'
-            + 'width:100%;border:0;';
+        ifr.style.cssText = 'width:100%;border:0;display:block;';
         box.appendChild(bar); box.appendChild(ifr); ov.appendChild(box);
         document.body.appendChild(ov);
     }
     document.getElementById('geaEditFrame').src = url;
     ov.style.display = 'block';
+    geaSizeEdit();
+}
+function geaSizeEdit()
+{
+    // Set explicit pixel sizes from the window. Relying on top/bottom percent
+    // insets + an absolutely-positioned iframe doesn't size reliably (esp. in
+    // older browsers / inside iframes), which left the iframe short. Compute it.
+    var box = document.getElementById('geaEditBox');
+    var ifr = document.getElementById('geaEditFrame');
+    if (!box || !ifr) return;
+    var w = window.innerWidth  || document.documentElement.clientWidth  || 1000;
+    var hh = window.innerHeight || document.documentElement.clientHeight || 700;
+    var boxW = Math.floor(w * 0.9), boxH = Math.floor(hh * 0.9);
+    box.style.left   = Math.floor((w - boxW) / 2) + 'px';
+    box.style.top    = Math.floor((hh - boxH) / 2) + 'px';
+    box.style.width  = boxW + 'px';
+    box.style.height = boxH + 'px';
+    ifr.style.height = (boxH - 30) + 'px';   // minus the close bar
 }
 function geaCloseEdit()
 {
@@ -8968,6 +8983,8 @@ function geaCloseEdit()
         location.reload();
     }
 }
+if (window.attachEvent) { window.attachEvent('onresize', geaSizeEdit); }
+else if (window.addEventListener) { window.addEventListener('resize', geaSizeEdit, false); }
 
 // -->
 </script>
