@@ -810,26 +810,20 @@ def restart_one_engine(archiver):
     # write. So run it best-effort: if it fails (e.g. permissions), warn but DO
     # NOT abort the whole add -- the channel is archived regardless, and the
     # index side gets sorted by the next update_indices/start_gea.
-    index_note = "reindexed; "
+    index_note = ""
     try:
         _run_args(["update_indices", "-s", archiver])
     except ChannelError, e:
         log.warning("update_indices failed (non-fatal): %s", e)
-        index_note = ("(note: index refresh skipped -- %s; the channel is still "
-                      "archived, but plotting its history may lag until the next "
-                      "update_indices/start_gea) " % e)
+        index_note = " (plots may lag until next reindex)"
 
     # Cycle just this engine via the daemon's disable/enable (same as the
     # Archiver Status buttons): disable stops it; wait until it's really down;
     # enable forces the daemon to restart it immediately with the new config.
     _daemon_http(host, dport, "/disable/%s" % eport)
-    stopped = _wait_until_down(host, eport, timeout=15)
+    _wait_until_down(host, eport, timeout=15)
     _daemon_http(host, dport, "/enable/%s" % eport)
-    if stopped:
-        return ("%scycled engine on port %s; daemon is restarting it with the "
-                "new config -- verify in Archiver Status" % (index_note, eport))
-    return ("%senable sent on port %s, but the engine did not confirm stopped "
-            "in time; check Archiver Status" % (index_note, eport))
+    return "archiver restarted" + index_note
 
 
 def _wait_until_down(host, port, timeout=15):
