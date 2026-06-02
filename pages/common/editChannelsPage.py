@@ -63,49 +63,51 @@ class EditChannelsPage(GeaBasePage):
         return RequestCollection({None: Request()})
 
     def _processRequest(self, request, stream):
-        # GEA's run() may call this once PER request in the collection (the real
-        # query-string request AND our empty local request). Two bugs came from
-        # that: the action ran/rendered multiple times (double-add; stale list).
-        # Fix: ACT at most once (guarded by self._acted, only on the request
-        # that actually carries params), and RENDER the listing exactly once
-        # (in _renderOnce, also guarded). So the displayed list is always a
-        # single fresh read taken AFTER the write.
-        page    = request.get("PAGE", "")
-        section = request.get("SECTION", "")
+        # GEA's run() can split a single submit across several Request objects
+        # in the collection (and adds our empty local request too), calling this
+        # once per object. So a single object may have ADD but not PAGE/SECTION,
+        # or vice-versa -- which made the action get skipped (the "two clicks"
+        # bug). Fix: MERGE every request's keys into one params dict across all
+        # the calls, act once we have a full action, render once.
+        if not hasattr(self, "_params"):
+            self._params = {}
+        for k in ("PAGE", "SECTION", "ADD", "EDIT", "DEL", "FORMAT", "LABEL",
+                  "PERIOD", "MODE", "SETSEC", "RESTART", "ITEMSPERROW",
+                  "SUBTABLE", "CSSCLASS", "QUERYSTRPAIRS"):
+            v = request.get(k, "")
+            if v != "" and k not in self._params:
+                self._params[k] = v
 
-        # DEBUG: dump exactly what arrived, to the apache error log, so we can
-        # see what the first vs second click actually sends.
-        try:
-            import sys
-            sys.stderr.write("EDITCHAN request keys=%r acted=%r\n"
-                             % (dict(request), getattr(self, "_acted", None)))
-        except Exception:
-            pass
-
-        # An "action" request is one carrying a verb param. The empty local
-        # request has none -> it only triggers the (guarded) render, never a write.
+        p = self._params
+        page = p.get("PAGE", "")
+        section = p.get("SECTION", "")
         action_keys = ("ADD", "EDIT", "DEL", "SETSEC", "RESTART")
-        has_action = any(request.get(k, "") for k in action_keys)
+        has_action = any(p.get(k, "") for k in action_keys)
 
         if page and section and has_action and not self._acted:
             self._acted = True
-            self._action_note = self._doAction(request, page, section)
+            self._action_note = self._doActionMerged(p, page, section)
 
-        # Render the listing once (after any action above has written to disk).
-        self._renderOnce(page, section)
+        # Render only once we've resolved the action (so the listing reflects the
+        # write) -- or, if this request carries no action at all, render the
+        # plain listing. Deferring avoids rendering a stale list before the
+        # action's params arrive in a later request iteration (the two-click bug).
+        if page and section and (self._acted or not has_action):
+            self._renderOnce(page, section)
 
-    def _doAction(self, request, page, section):
-        """Perform the one add/edit/delete/setsec/restart. Returns a note str."""
+    def _doActionMerged(self, p, page, section):
+        """Perform the one add/edit/delete/setsec/restart. `p` is the merged
+        params dict. Returns a note str."""
         archiver = _archiver_for_page(page)
-        add_pv  = request.get("ADD", "")
-        del_pv  = request.get("DEL", "")
-        edit_pv = request.get("EDIT", "")
-        fmt     = request.get("FORMAT", "")
-        label   = request.get("LABEL", "")
-        period  = request.get("PERIOD", "1")
-        mode    = request.get("MODE", "Monitor")
-        setsec  = request.get("SETSEC", "")
-        restart = request.get("RESTART", "")
+        add_pv  = p.get("ADD", "")
+        del_pv  = p.get("DEL", "")
+        edit_pv = p.get("EDIT", "")
+        fmt     = p.get("FORMAT", "")
+        label   = p.get("LABEL", "")
+        period  = p.get("PERIOD", "1")
+        mode    = p.get("MODE", "Monitor")
+        setsec  = p.get("SETSEC", "")
+        restart = p.get("RESTART", "")
 
         def _pending(r, msg):
             if r.get("restarted"):
@@ -134,10 +136,10 @@ class EditChannelsPage(GeaBasePage):
                 return _pending(r, "Deleted '%s' from '%s'." % (r["pv"], section))
             elif setsec:
                 chpath = gea_channel.resolve_page(page)
-                vals = {"ITEMSPERROW":   request.get("ITEMSPERROW", ""),
-                        "SUBTABLE":      request.get("SUBTABLE", ""),
-                        "CSSCLASS":      request.get("CSSCLASS", ""),
-                        "QUERYSTRPAIRS": request.get("QUERYSTRPAIRS", "")}
+                vals = {"ITEMSPERROW":   p.get("ITEMSPERROW", ""),
+                        "SUBTABLE":      p.get("SUBTABLE", ""),
+                        "CSSCLASS":      p.get("CSSCLASS", ""),
+                        "QUERYSTRPAIRS": p.get("QUERYSTRPAIRS", "")}
                 gea_channel.set_section_settings(chpath, section, vals)
                 return ("Section layout updated for '%s' (display only; refresh "
                         "the page to see it)." % section)
