@@ -654,7 +654,12 @@ def restart_one_engine(archiver):
     # actually died, the daemon still sees it running and won't restart it (that
     # was the earlier bug). So: disable, poll until the engine port stops
     # answering (it's really down), then enable to force the immediate restart.
-    host = os.environ.get("GEA_HOST", "localhost")
+    #
+    # Always talk to the daemon over localhost: the web frontend and the daemon
+    # run on the same box, the daemon's HTTP answers on localhost:port, and this
+    # avoids DNS / cross-host firewall issues (GEA_HOST may name a sibling box
+    # the frontend can't route to).
+    host = "localhost"
     _daemon_http(host, dport, "/disable/%s" % eport)
     stopped = _wait_until_down(host, eport, timeout=15)
     _daemon_http(host, dport, "/enable/%s" % eport)
