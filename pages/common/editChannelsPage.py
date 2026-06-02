@@ -126,13 +126,24 @@ class EditChannelsPage(GeaBasePage):
         here = GEAVars.dispatchScript + "/pages/common/editChannelsPage"
 
         h = []
-        h.append('<div style="margin:1em; font-family:sans-serif;">')
+        # Full-width, readable layout that scales with the window.
+        h.append('<style>'
+                 '.ecwrap{font-family:sans-serif;margin:1em;}'
+                 '.ectbl{border-collapse:collapse;width:100%;table-layout:auto;}'
+                 '.ectbl th,.ectbl td{border:1px solid #ccc;padding:4px 8px;'
+                 'text-align:left;vertical-align:top;word-break:break-word;}'
+                 '.ectbl th{background:#eee;}'
+                 '.ectbl code{white-space:normal;}'
+                 '.ecform input[type=text]{width:100%;box-sizing:border-box;}'
+                 '.ecform td{padding:3px 6px;}'
+                 '</style>')
+        h.append('<div class="ecwrap">')
         h.append("<h3>Edit channels &mdash; %s</h3>" % section)
         h.append("<p>Page: <code>%s</code>" % page)
         h.append("&nbsp; Archiver: <code>%s</code></p>"
                  % (archiver or "(none -- display only)"))
 
-        h.append('<table border="1" cellpadding="4" cellspacing="0">')
+        h.append('<table class="ectbl">')
         h.append("<tr><th>Channel</th><th>Label</th><th>Display</th>"
                  "<th>Period</th><th>Mode</th><th>Archived</th><th></th></tr>")
         for row in rows:
@@ -162,20 +173,24 @@ class EditChannelsPage(GeaBasePage):
         # One form, used for both Add and Edit. 'edit' links flip it to edit mode
         # via JS (set the hidden mode field + the action field name + values).
         h.append('<h4 id="formtitle">Add a channel to this section</h4>')
-        h.append('<form method="GET" action="%s">' % here)
+        h.append('<form class="ecform" method="GET" action="%s">' % here)
         h.append('<input type="hidden" name="PAGE" value="%s"/>' % page)
         h.append('<input type="hidden" name="SECTION" value="%s"/>' % section)
+        h.append('<table style="width:100%;max-width:640px;">')
         # The action field: name="ADD" by default; edit mode renames it to EDIT.
-        h.append('PV name: <input type="text" id="f_pv" name="ADD" size="34" '
-                 'placeholder="m1:x:y.VAL"/><br/>')
-        h.append('Label: <input type="text" id="f_label" name="LABEL" size="34"/><br/>')
-        h.append('Display as: <select id="f_fmt" name="FORMAT">'
-                 '<option value="">Plot</option>'
+        h.append('<tr><td style="width:7em;">PV name:</td>'
+                 '<td><input type="text" id="f_pv" name="ADD" '
+                 'placeholder="m1:x:y.VAL"/></td></tr>')
+        h.append('<tr><td>Label:</td>'
+                 '<td><input type="text" id="f_label" name="LABEL"/></td></tr>')
+        h.append('<tr><td>Display as:</td><td><select id="f_fmt" name="FORMAT">'
                  '<option value="Plot">Plot</option>'
-                 '<option value="Spreadsheet">Spreadsheet</option></select><br/>')
-        h.append('Period (s): <input type="text" id="f_period" name="PERIOD" value="1" size="4"/> '
-                 'Mode: <select id="f_mode" name="MODE">'
-                 '<option>Monitor</option><option>Scan</option></select><br/><br/>')
+                 '<option value="Spreadsheet">Spreadsheet</option></select></td></tr>')
+        h.append('<tr><td>Period (s):</td>'
+                 '<td><input type="text" id="f_period" name="PERIOD" value="1" '
+                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode" name="MODE">'
+                 '<option>Monitor</option><option>Scan</option></select></td></tr>')
+        h.append('</table>')
         h.append('<input type="submit" id="f_submit" value="Add channel"/> '
                  '<input type="button" value="Clear" onclick="resetForm();"/>')
         h.append('</form>')
@@ -189,7 +204,7 @@ class EditChannelsPage(GeaBasePage):
 function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
-  setField('f_fmt',fmt=='Plot'?'Plot':fmt); setField('f_period',period); setField('f_mode',mode);
+  setField('f_fmt',fmt||'Plot'); setField('f_period',period||'1'); setField('f_mode',mode||'Monitor');
   var pvf=document.getElementById('f_pv'); pvf.name='EDIT'; pvf.readOnly=true;
   document.getElementById('f_submit').value='Save changes';
   document.getElementById('formtitle').innerHTML='Edit channel: '+pv;
@@ -197,7 +212,7 @@ function fillEdit(pv,label,fmt,period,mode){
 }
 function resetForm(){
   var pvf=document.getElementById('f_pv'); pvf.name='ADD'; pvf.readOnly=false; pvf.value='';
-  setField('f_label',''); setField('f_fmt',''); setField('f_period','1'); setField('f_mode','Monitor');
+  setField('f_label',''); setField('f_fmt','Plot'); setField('f_period','1'); setField('f_mode','Monitor');
   document.getElementById('f_submit').value='Add channel';
   document.getElementById('formtitle').innerHTML='Add a channel to this section';
 }
