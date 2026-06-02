@@ -376,20 +376,13 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
             page_bak = _write_atomic(chpath, "\n".join(chlines))
         if need_cnfg:
             _run("update_config", archiver)      # fast; also validates the .cnfg
-            # Best-effort sanity check that the regenerated group.xml picked up
-            # the PV. This is the ONLY thing add did that edit/delete don't, and
-            # it walks all of GEA_DATA -- slow, and it was rolling back perfectly
-            # good adds when the walk didn't find the PV in time / looked in the
-            # wrong tree (which is why Add "did nothing" while edit/delete were
-            # fine). _run already raises if update_config itself fails, so a bad
-            # config is still caught. Here we only WARN; never roll back the add.
-            try:
-                if not _pv_in_group_xml(archiver, pv):
-                    warnings.append(
-                        "Could not confirm '%s' in the engine's group.xml yet; "
-                        "it may take effect on the next archiver restart." % pv)
-            except Exception, _e:
-                warnings.append("group.xml verify skipped: %s" % _e)
+            # NOTE: we do NOT verify the PV in the engine's group.xml here. That
+            # check did os.walk over all of GEA_DATA -- on the real server that
+            # tree is huge / on NFS, so the walk could hang for many seconds or
+            # indefinitely, leaving the Add request (pending) forever in the
+            # browser (the dialog "never refreshed"). update_config above already
+            # raises on a genuinely bad config, so dropping the walk is safe.
+            # This makes Add return as fast as edit/delete (which never walked).
     except Exception:
         if page_bak:
             _restore(chpath, page_bak)
