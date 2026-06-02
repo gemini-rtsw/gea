@@ -9167,7 +9167,8 @@ updateFixedTimeRange();
                 urllib.quote(sectionName))
             titleHtml=('%s &nbsp;<a class="editchan" href="#" '
                        'onclick="window.open(\'%s\',\'editchan\','
-                       '\'width=900,height=600,scrollbars=yes,resizable=yes\');'
+                       '\'width=900,height=600,scrollbars=yes,resizable=yes,'
+                       'location=no,toolbar=no,menubar=no,status=no\');'
                        'return false;" '
                        'title="Add or remove channels in this section">[edit]</a>'
                        % (sectionName, editUrl))
