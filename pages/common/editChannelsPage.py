@@ -72,6 +72,7 @@ class EditChannelsPage(GeaBasePage):
         label   = request.get("LABEL", "")
         period  = request.get("PERIOD", "1")
         mode    = request.get("MODE", "Monitor")
+        setsec  = request.get("SETSEC", "")     # "1" -> save section layout
 
         if not page or not section:
             html.doc.append("<p>Missing PAGE or SECTION.</p>")
@@ -106,6 +107,15 @@ class EditChannelsPage(GeaBasePage):
                 if r.get("restart_triggered"):
                     note += " %s" % r.get("restart_info", "")
                 stream.write(note)
+            elif setsec:
+                chpath = gea_channel.resolve_page(page)
+                vals = {"ITEMSPERROW":   request.get("ITEMSPERROW", ""),
+                        "SUBTABLE":      request.get("SUBTABLE", ""),
+                        "CSSCLASS":      request.get("CSSCLASS", ""),
+                        "QUERYSTRPAIRS": request.get("QUERYSTRPAIRS", "")}
+                gea_channel.set_section_settings(chpath, section, vals)
+                stream.write("Section layout updated for '%s' (display only; "
+                             "refresh the page to see it)." % section)
         except gea_channel.ChannelError, e:
             stream.write("Error: %s (no changes kept)" % e)
         except Exception, e:
@@ -175,6 +185,50 @@ class EditChannelsPage(GeaBasePage):
         if not rows:
             h.append('<tr><td colspan="7"><i>No channels in this section yet.</i></td></tr>')
         h.append("</table>")
+
+        # ---- Section layout settings (display only; no archiver restart) -----
+        try:
+            ss = gea_channel.section_settings(chpath, section)
+        except gea_channel.ChannelError:
+            ss = {"ITEMSPERROW": "", "SUBTABLE": "", "CSSCLASS": "", "QUERYSTRPAIRS": ""}
+
+        def _sel(cur, opts):
+            out = []
+            for val, txt in opts:
+                s = " selected" if cur == val else ""
+                out.append('<option value="%s"%s>%s</option>' % (val, s, txt))
+            return "".join(out)
+
+        h.append('<h4>Section layout</h4>')
+        h.append('<form class="ecform" method="GET" action="%s">' % here)
+        h.append('<input type="hidden" name="PAGE" value="%s"/>' % page)
+        h.append('<input type="hidden" name="SECTION" value="%s"/>' % section)
+        h.append('<input type="hidden" name="SETSEC" value="1"/>')
+        h.append('<table style="width:100%;max-width:640px;">')
+        h.append('<tr><td style="width:11em;">Columns (per row):</td>'
+                 '<td><input type="text" name="ITEMSPERROW" value="%s" '
+                 'style="width:5em;" placeholder="default"/> '
+                 '<span class="small">how many channels per row</span></td></tr>'
+                 % ss.get("ITEMSPERROW", ""))
+        h.append('<tr><td>Own sub-table:</td><td><select name="SUBTABLE">%s'
+                 '</select></td></tr>'
+                 % _sel(ss.get("SUBTABLE", ""),
+                        [("", "(default)"), ("True", "True"), ("False", "False")]))
+        h.append('<tr><td>CSS class:</td>'
+                 '<td><input type="text" name="CSSCLASS" value="%s" '
+                 'placeholder="(default)"/></td></tr>' % ss.get("CSSCLASS", ""))
+        h.append('<tr><td>Default queries:</td>'
+                 '<td><input type="text" name="QUERYSTRPAIRS" value="%s" '
+                 "placeholder=\"e.g. {'FORMAT':'Spreadsheet'}\"/></td></tr>"
+                 % ss.get("QUERYSTRPAIRS", "").replace('"', "&quot;"))
+        h.append('</table>')
+        h.append('<input type="submit" value="Save section layout"/>')
+        h.append('</form>')
+        h.append('<p class="small">Leave a field blank to remove that setting '
+                 '(falls back to the page/global default). Layout changes are '
+                 'display-only &mdash; no archiver restart; refresh the page to '
+                 'see them.</p>')
+        h.append('<hr/>')
 
         # One form, used for both Add and Edit. 'edit' links flip it to edit mode
         # via JS (set the hidden mode field + the action field name + values).

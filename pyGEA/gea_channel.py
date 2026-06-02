@@ -102,6 +102,135 @@ def _engine_ports(archiver):
     return (None, None)
 
 
+# ---- section-level layout settings (display only; no archiver restart) -----
+
+# marker -> (offset after the marker text, so line[offset:] is the value).
+# Offsets match GEAHtml._parseSectionStr exactly.
+_SECTION_MARKERS = [
+    ("ITEMSPERROW",   "#[ITEMSPERROW]", 14),
+    ("SUBTABLE",      "#[SUBTABLE]",    11),
+    ("CSSCLASS",      "#[CSSCLASS]",    11),
+    ("QUERYSTRPAIRS", "#[QUERYSTRPAIRS]", 16),
+]
+
+
+def section_settings(channels_path, section):
+    """Return the current section-level marker values: {ITEMSPERROW, SUBTABLE,
+    CSSCLASS, QUERYSTRPAIRS} -- empty string if a marker isn't present."""
+    out = dict((k, "") for k, _m, _o in _SECTION_MARKERS)
+    f = open(channels_path)
+    try:
+        lines = f.read().split("\n")
+    finally:
+        f.close()
+    in_sec = False
+    for raw in lines:
+        s = raw.strip()
+        if s.startswith(SECTION_MARK):
+            in_sec = (s[len(SECTION_MARK):].strip() == section)
+            continue
+        if not in_sec:
+            continue
+        for key, marker, off in _SECTION_MARKERS:
+            if s.startswith(marker):
+                out[key] = s[off:].strip()
+    return out
+
+
+def set_section_settings(channels_path, section, values):
+    """
+    Set/replace/remove the section's layout markers from a {KEY: value} dict.
+    A blank value removes that marker (falls back to the file/global default).
+    Validates each value the same way GEAHtml does. Writes atomically with a
+    .bak. Channel lines and other content are left untouched. Returns content.
+    """
+    # Validate before touching anything.
+    clean = {}
+    for key, _marker, _off in _SECTION_MARKERS:
+        if key not in values:
+            continue
+        v = (values[key] or "").strip()
+        if v == "":
+            clean[key] = ""          # means: remove the marker
+            continue
+        if key == "ITEMSPERROW":
+            try:
+                iv = int(v)
+                if iv <= 0:
+                    raise ValueError
+            except ValueError:
+                raise ChannelError("Columns (ITEMSPERROW) must be a positive integer")
+            clean[key] = str(iv)
+        elif key == "SUBTABLE":
+            if v.lower() not in ("true", "false", "1", "0"):
+                raise ChannelError("Subtable must be True or False")
+            clean[key] = "True" if v.lower() in ("true", "1") else "False"
+        elif key == "CSSCLASS":
+            if " " in v or "{" in v:
+                raise ChannelError("CSS class must be a single class name")
+            clean[key] = v
+        elif key == "QUERYSTRPAIRS":
+            # Must be a valid python dict literal (GEAHtml eval()s it).
+            try:
+                import ast
+                d = ast.literal_eval(v)
+                if not isinstance(d, dict):
+                    raise ValueError
+            except Exception:
+                raise ChannelError("Default queries must be a dict literal, "
+                                   "e.g. {'FORMAT':'Spreadsheet'}")
+            clean[key] = v
+
+    marker_for = dict((k, m) for k, m, _o in _SECTION_MARKERS)
+
+    f = open(channels_path)
+    try:
+        lines = f.read().split("\n")
+    finally:
+        f.close()
+
+    # Find the section span [start, end).
+    start = None
+    end = len(lines)
+    for i, raw in enumerate(lines):
+        if raw.strip().startswith(SECTION_MARK):
+            title = raw.strip()[len(SECTION_MARK):].strip()
+            if start is None and title == section:
+                start = i
+            elif start is not None:
+                end = i
+                break
+    if start is None:
+        raise ChannelError("Section '%s' not found" % section)
+
+    # Within the section: drop existing marker lines we're setting, remember
+    # where to insert new ones (right after the section title line).
+    body = lines[start + 1:end]
+    keys_we_set = set(clean.keys())
+    kept = []
+    for raw in body:
+        s = raw.strip()
+        drop = False
+        for key in keys_we_set:
+            if s.startswith(marker_for[key]):
+                drop = True
+                break
+        if not drop:
+            kept.append(raw)
+
+    # Build the new marker lines (skip blanks = removed).
+    new_markers = []
+    for key, marker, _off in _SECTION_MARKERS:
+        if key in clean and clean[key] != "":
+            new_markers.append("%s %s" % (marker, clean[key]))
+
+    new_section = [lines[start]] + new_markers + kept
+    new_lines = lines[:start] + new_section + lines[end:]
+    content = "\n".join(new_lines)
+    _write_atomic(channels_path, content)
+    return content
+
+
 def existing_pvs(archiver):
     pvs = set()
     try:
