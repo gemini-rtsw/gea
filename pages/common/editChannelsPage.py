@@ -334,7 +334,7 @@ function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
 function buildAdd(a){
   var pv=gv('f_pv');
   if(!pv){ alert('Enter a PV name.'); return false; }
-  a.href = gv('f_base')
+  var u = gv('f_base')
     + '?PAGE=' + encodeURIComponent(gv('f_page'))
     + '&SECTION=' + encodeURIComponent(gv('f_section'))
     + (_editMode ? '&EDIT=' : '&ADD=') + encodeURIComponent(pv)
@@ -342,7 +342,11 @@ function buildAdd(a){
     + '&FORMAT=' + encodeURIComponent(gv('f_fmt'))
     + '&PERIOD=' + encodeURIComponent(gv('f_period'))
     + '&MODE=' + encodeURIComponent(gv('f_mode'));
-  return true;   // follow the link natively, like delete
+  // Navigate NOW to the freshly-built URL, and cancel the default click.
+  // (Setting a.href then returning true made the FIRST click follow the old
+  //  '#' href -- which is why it took two clicks. This navigates immediately.)
+  window.location.href = u;
+  return false;
 }
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
