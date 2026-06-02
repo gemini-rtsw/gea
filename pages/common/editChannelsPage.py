@@ -100,18 +100,32 @@ class EditChannelsPage(GeaBasePage):
             self._renderOnce(page, section)
 
     def _auto_edit_js(self):
-        """After an Add, emit JS that fills the form as an EDIT of the just-added
-        PV and submits it -- doing automatically the manual 'edit then save' that
-        is known to refresh the dialog. Empty string when there's nothing to do."""
+        """After an Add, KILL the dialog and reopen it fresh -- tear the whole
+        iframe overlay out of the parent and recreate it pointing at the plain
+        listing URL. This is the bluntest possible refresh and doesn't depend on
+        re-navigating the existing iframe (which didn't refresh on the first
+        click). Empty string when there's nothing to do."""
         ae = getattr(self, "_auto_edit", None)
         if not ae:
             return ""
-        return ("if(window.name!=='_geaAutoEdit'){window.name='_geaAutoEdit';"
-                "fillEdit(%s,%s,%s,%s,%s);"
-                "document.getElementById('f_form').submit();}"
-                "else{window.name='';}"
-                % (_js_str(ae["pv"]), _js_str(ae["label"]), _js_str(ae["fmt"]),
-                   _js_str(ae["period"]), _js_str(ae["mode"])))
+        # Plain listing URL (no action) for the freshly-reopened dialog.
+        base = getattr(self, "_here", "") or ""
+        page = self._params.get("PAGE", "")
+        section = self._params.get("SECTION", "")
+        import urllib as _u
+        listurl = "%s?PAGE=%s&SECTION=%s" % (
+            base, _u.quote(page), _u.quote(section))
+        return ("""try{
+  var P=window.parent;
+  if(P && P!==window && P.document){
+    var ov=P.document.getElementById('geaEditOverlay');
+    if(ov && ov.parentNode){ ov.parentNode.removeChild(ov); }  // KILL it
+    if(P.geaEditChannels){ P.geaEditChannels(%s); }             // BRING IT BACK
+  } else {
+    window.location.href=%s;   // not framed: just reload the listing
+  }
+}catch(e){ try{window.location.href=%s;}catch(e2){} }"""
+                % (_js_str(listurl), _js_str(listurl), _js_str(listurl)))
 
     def _doActionMerged(self, p, page, section):
         """Perform the one add/edit/delete/setsec/restart. `p` is the merged
@@ -193,6 +207,7 @@ class EditChannelsPage(GeaBasePage):
         qp = lambda **kw: "&".join(
             "%s=%s" % (k, urllib.quote(str(v))) for k, v in kw.items())
         here = GEAVars.dispatchScript + "/pages/common/editChannelsPage"
+        self._here = here
 
         h = []
         # Emit a COMPLETE html document. In standAlone mode the GEA wrapper
