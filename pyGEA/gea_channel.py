@@ -648,16 +648,34 @@ def restart_one_engine(archiver):
                            "archiveconfig.xml" % archiver)
     host = os.environ.get("GEA_HOST", "localhost")
 
-    # Stop just this engine. The ArchiveDaemon's update_schedule sets a daily
-    # engine's next_start to "now" the moment it sees the engine is not running,
-    # then start_engines respawns it (with the new config) on its next loop.
-    # The daemon checks every ~30s, which is too long to block this web request
-    # on -- so we stop it and return immediately, telling the user to expect it
-    # back shortly and to verify in Archiver Status. We do NOT claim "restarted"
-    # because we don't wait to confirm it.
-    _run("stop_engine", archiver)
-    return ("stop sent on port %s; the ArchiveDaemon should restart it within "
-            "~30s with the new config -- verify in Archiver Status" % eport)
+    # Use the daemon's own disable/enable cycle -- the same two buttons on the
+    # Archiver Status page that work when a human clicks them. The trick is to
+    # WAIT between them: disable stops the engine, but if we enable before it has
+    # actually died, the daemon still sees it running and won't restart it (that
+    # was the earlier bug). So: disable, poll until the engine port stops
+    # answering (it's really down), then enable to force the immediate restart.
+    host = os.environ.get("GEA_HOST", "localhost")
+    _daemon_http(host, dport, "/disable/%s" % eport)
+    stopped = _wait_until_down(host, eport, timeout=15)
+    _daemon_http(host, dport, "/enable/%s" % eport)
+    if stopped:
+        return ("disabled+enabled on port %s; daemon will restart it within a "
+                "few seconds -- verify in Archiver Status" % eport)
+    return ("enable sent on port %s, but the engine did not confirm stopped in "
+            "time; check Archiver Status (re-enable if still disabled)" % eport)
+
+
+def _wait_until_down(host, port, timeout=15):
+    """Poll the engine's port until it stops answering (engine is down)."""
+    import socket, time
+    for _i in range(int(timeout)):
+        try:
+            s = socket.create_connection((host, int(port)), timeout=2)
+            s.close()
+            time.sleep(1)            # still up; wait and retry
+        except (socket.error, ValueError):
+            return True              # refused/unreachable -> it's down
+    return False
 
 
 def _daemon_http(host, port, path):
