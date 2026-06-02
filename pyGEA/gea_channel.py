@@ -407,9 +407,19 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
 
 def restart_archiver(archiver):
     """Restart just this one archiver (the per-engine cycle). Call this once
-    after a batch of add/edit/delete saves to apply them. Returns a status str."""
+    after a batch of add/edit/delete saves to apply them. Returns a status str.
+
+    Regenerate the engine's group.xml FIRST, then cycle the engine. The engine
+    reads <archiver>-group.xml fresh on launch, so the restart only picks up new
+    channels if that file was rebuilt from the .cnfg beforehand. The per-save
+    update_config is meant to have done that already, but we re-run it here so
+    the Restart button is self-sufficient: if an earlier save's update_config
+    didn't take effect (e.g. the CGI was killed mid-request), the channels would
+    otherwise silently fail to appear after the restart. This mirrors start_gea,
+    which always runs update_config right before (re)starting the engines."""
     if archiver not in list_archivers():
         raise ChannelError("Unknown archiver '%s'" % archiver)
+    _run("update_config", archiver)      # rebuild group.xml from the current .cnfg
     return restart_one_engine(archiver)
 
 
