@@ -189,19 +189,6 @@ class EditChannelsPage(GeaBasePage):
         h.append("&nbsp; Archiver: <code>%s</code></p>"
                  % (archiver or "(none -- display only)"))
 
-        # Standalone Restart button. Saving channels does NOT restart; you can
-        # add/edit/delete several, then click this once to apply them all.
-        if archiver:
-            resturl = "%s?%s" % (here, qp(PAGE=page, SECTION=section, RESTART="1"))
-            h.append('<div style="margin:0 0 1em 0;padding:6px;background:#fff7e0;'
-                     'border:1px solid #e0c060;">'
-                     'Saving a new/changed channel writes the config but does '
-                     '<b>not</b> restart the archiver. Add everything you need, '
-                     'then apply it all at once: &nbsp;'
-                     '<a href="%s" onclick="return confirm('
-                     "'Restart archiver %s now? (a few seconds)')\">"
-                     '<b>Restart archiver %s</b></a></div>'
-                     % (resturl, archiver, archiver))
 
         h.append('<table class="ectbl">')
         h.append("<tr><th>Channel</th><th>Label</th><th>Display</th>"
@@ -298,11 +285,21 @@ class EditChannelsPage(GeaBasePage):
         h.append('<input type="submit" id="f_submit" value="Add channel"/> '
                  '<input type="button" value="Clear" onclick="resetForm();"/>')
         h.append('</form>')
+        # Restart warning + button, right here by Save so it's seen after saving:
+        # saving writes the config but does NOT restart -- add everything, then
+        # click this once to apply it all.
         if archiver:
-            h.append('<p style="color:#666;font-size:0.85em;">Adding a new PV '
-                     'will restart archiver <code>%s</code> (a few seconds). '
-                     'Edits that change period/mode also restart it; label/format '
-                     'changes do not.</p>' % archiver)
+            resturl = "%s?%s" % (here, qp(PAGE=page, SECTION=section, RESTART="1"))
+            h.append('<div style="margin:1em 0;padding:8px;background:#fff7e0;'
+                     'border:1px solid #e0c060;">'
+                     'Saving writes the config but does <b>not</b> restart the '
+                     'archiver, so a new channel is <b>not archived yet</b>. Add '
+                     'everything you need, then apply it all at once:<br/><br/>'
+                     '<a href="%s" onclick="return confirm('
+                     "'Restart archiver %s now? (a few seconds)')\" "
+                     'style="font-size:1.1em;">'
+                     '&#9888; <b>Restart archiver %s now</b></a></div>'
+                     % (resturl, archiver, archiver))
         # JS: fillEdit pre-fills + flips the form to edit; resetForm restores add.
         h.append("""<script type="text/javascript">
 function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
