@@ -338,10 +338,11 @@ class EditChannelsPage(GeaBasePage):
                      'style="font-size:1.1em;">'
                      '&#9888; <b>Restart archiver %s now</b></a></div>'
                      % (resturl, archiver, archiver))
-        # syncAdd() rebuilds the Add link's href from the fields on every change
-        # (and once at load). The link is then followed natively on click -- the
-        # SAME first-click-refreshes mechanism delete uses. _editMode picks ADD vs
-        # EDIT. canAdd() only blocks an empty PV. No window.location, no '#'.
+        # syncAdd() keeps f_submit's href = the current add/edit action URL.
+        # canAdd() (the click handler) saves via a background XHR to that URL,
+        # then reloads the iframe to the plain listing once the save completes --
+        # decoupling save from navigation so the first click refreshes (the
+        # listing re-read happens in its own event turn). _editMode picks ADD/EDIT.
         h.append("""<script type="text/javascript">
 var _editMode=false;
 function gv(id){var e=document.getElementById(id);return e?e.value:'';}
@@ -361,20 +362,42 @@ function canAdd(){
   if(!gv('f_pv')){ alert('Enter a PV name.'); return false; }
   syncAdd();
   var a=document.getElementById('f_submit');
-  var u=a?a.href:'';
-  // Navigating THIS iframe in place (a real <a> follow, or window.location)
-  // gets dropped on the first click and only takes on the second -- the long-
-  // standing two-click bug. The dialog is opened by the PARENT setting our
-  // iframe's .src (geaEditChannels), and THAT always loads. So refresh the same
-  // way: have the parent reset our src to the new URL. Fall back to a normal
-  // link follow if we're somehow not framed.
+  var actionUrl = a ? a.href : '';
+  // The two-click bug is a NAVIGATION problem: navigating this iframe to the
+  // action URL (link-follow, window.location, or parent-set src) doesn't show
+  // the result on the first click -- but the save itself always works. So
+  // decouple the two: perform the save with a background XMLHttpRequest (which
+  // always completes), and only AFTER it finishes do we reload the iframe to
+  // the plain listing URL (no action). That reload is a fresh, separate GET in
+  // its own event turn, so it isn't subject to the first-click drop, and it
+  // re-reads the file the save just wrote. Disable the button while in flight.
+  if (a){ a.style.pointerEvents='none'; a.style.opacity='0.5';
+          a.innerHTML = _editMode ? 'Saving...' : 'Adding...'; }
+  var listUrl = gv('f_base')
+    + '?PAGE=' + encodeURIComponent(gv('f_page'))
+    + '&SECTION=' + encodeURIComponent(gv('f_section'));
+  function reloadList(){
+    // Cache-bust so the browser can't treat the listing GET as a no-op.
+    var u = listUrl + '&_=' + (new Date()).getTime();
+    try{
+      if(window.parent && window.parent.geaEditChannels && window.parent!==window){
+        window.parent.geaEditChannels(u); return;
+      }
+    }catch(e){}
+    window.location.href = u;
+  }
   try{
-    if(window.parent && window.parent.geaEditChannels && window.parent!==window){
-      window.parent.geaEditChannels(u);
-      return false;   // parent reloads the iframe; don't also navigate in-place
-    }
-  }catch(e){}
-  return true;        // not framed: follow the live link natively
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', actionUrl, true);
+    xhr.onreadystatechange = function(){
+      if(xhr.readyState===4){ reloadList(); }
+    };
+    xhr.send(null);
+  }catch(e){
+    // No XHR -> fall back to a plain navigation to the action URL.
+    window.location.href = actionUrl;
+  }
+  return false;   // never let the <a> navigate; XHR+reload handles it
 }
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
