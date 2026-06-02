@@ -274,25 +274,30 @@ class EditChannelsPage(GeaBasePage):
         # NO <form>. Add/Edit build a URL and navigate -- the exact mechanism
         # the 'delete' link uses, which works in one shot. (A GET <form> submit
         # was getting split/mishandled, making Add need two clicks.)
+        # Real <form> that GET-navigates to this page -- the SAME native browser
+        # navigation the working delete link uses (a form submit IS a link
+        # navigation). No JavaScript involved in the actual navigate. The action
+        # field is named ADD; edit mode renames it to EDIT (JS), like before.
         h.append('<h4 id="formtitle">Add a channel to this section</h4>')
-        h.append('<input type="hidden" id="f_page" value="%s"/>' % page)
-        h.append('<input type="hidden" id="f_section" value="%s"/>' % section)
+        h.append('<form method="GET" action="%s" target="_self">' % here)
+        h.append('<input type="hidden" name="PAGE" value="%s"/>' % page)
+        h.append('<input type="hidden" name="SECTION" value="%s"/>' % section)
         h.append('<table style="width:100%;max-width:640px;">')
         h.append('<tr><td style="width:7em;">PV name:</td>'
-                 '<td><input type="text" id="f_pv" placeholder="m1:x:y.VAL"/></td></tr>')
+                 '<td><input type="text" id="f_pv" name="ADD" placeholder="m1:x:y.VAL"/></td></tr>')
         h.append('<tr><td>Label:</td>'
-                 '<td><input type="text" id="f_label"/></td></tr>')
-        h.append('<tr><td>Display as:</td><td><select id="f_fmt">'
+                 '<td><input type="text" id="f_label" name="LABEL"/></td></tr>')
+        h.append('<tr><td>Display as:</td><td><select id="f_fmt" name="FORMAT">'
                  '<option value="Plot">Plot</option>'
                  '<option value="Spreadsheet">Spreadsheet</option></select></td></tr>')
         h.append('<tr><td>Period (s):</td>'
-                 '<td><input type="text" id="f_period" value="1" '
-                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode">'
+                 '<td><input type="text" id="f_period" name="PERIOD" value="1" '
+                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode" name="MODE">'
                  '<option>Monitor</option><option>Scan</option></select></td></tr>')
         h.append('</table>')
-        h.append('<input type="button" id="f_submit" value="Add channel" '
-                 'onclick="submitChan();"/> '
+        h.append('<input type="submit" id="f_submit" value="Add channel"/> '
                  '<input type="button" value="Clear" onclick="resetForm();"/>')
+        h.append('</form>')
         # Show the outcome of the last action HERE, by the button -- the list can
         # be long, so a message at the top would scroll out of view.
         if note:
@@ -313,43 +318,25 @@ class EditChannelsPage(GeaBasePage):
                      'style="font-size:1.1em;">'
                      '&#9888; <b>Restart archiver %s now</b></a></div>'
                      % (resturl, archiver, archiver))
-        # JS: Add/Edit build a URL and navigate (same as delete). A module-level
-        # _editMode flag picks ADD vs EDIT. No form, no submit, no splitting.
+        # JS only fills the form for edit (the form itself submits natively, same
+        # as delete's link). 'edit' renames the PV field ADD->EDIT; Clear undoes.
         h.append("""<script type="text/javascript">
-var _editMode = false;
-function gv(id){var e=document.getElementById(id);return e?e.value:'';}
 function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
-function submitChan(){
-  var pv=gv('f_pv');
-  if(!pv){ alert('Enter a PV name.'); return; }
-  var base=%s;
-  var u = base + '?PAGE=' + encodeURIComponent(gv('f_page'))
-        + '&SECTION=' + encodeURIComponent(gv('f_section'))
-        + (_editMode ? '&EDIT=' : '&ADD=') + encodeURIComponent(pv)
-        + '&LABEL='  + encodeURIComponent(gv('f_label'))
-        + '&FORMAT=' + encodeURIComponent(gv('f_fmt'))
-        + '&PERIOD=' + encodeURIComponent(gv('f_period'))
-        + '&MODE='   + encodeURIComponent(gv('f_mode'))
-        + '&_=' + (new Date()).getTime();   // cache-bust: force a real reload
-  window.location.href = u;
-}
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
   setField('f_fmt',fmt||'Plot'); setField('f_period',period||'1'); setField('f_mode',mode||'Monitor');
-  _editMode = true;
-  var pvf=document.getElementById('f_pv'); pvf.readOnly=true;
+  var pvf=document.getElementById('f_pv'); pvf.name='EDIT'; pvf.readOnly=true;
   document.getElementById('f_submit').value='Save changes';
   document.getElementById('formtitle').innerHTML='Edit channel: '+pv;
   pvf.focus();
 }
 function resetForm(){
-  _editMode = false;
-  var pvf=document.getElementById('f_pv'); pvf.readOnly=false; pvf.value='';
+  var pvf=document.getElementById('f_pv'); pvf.name='ADD'; pvf.readOnly=false; pvf.value='';
   setField('f_label',''); setField('f_fmt','Plot'); setField('f_period','1'); setField('f_mode','Monitor');
   document.getElementById('f_submit').value='Add channel';
   document.getElementById('formtitle').innerHTML='Add a channel to this section';
 }
-</script>""" % _js_str(here))
+</script>""")
         h.append('</div>')
         h.append('</body></html>')
         return "\n".join(h)
