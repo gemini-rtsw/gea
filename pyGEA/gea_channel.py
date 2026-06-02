@@ -648,10 +648,16 @@ def restart_one_engine(archiver):
                            "archiveconfig.xml" % archiver)
     host = os.environ.get("GEA_HOST", "localhost")
 
-    # disable (stop) then enable (force restart). Small reads; quick.
-    _daemon_http(host, dport, "/disable/%s" % eport)
-    _daemon_http(host, dport, "/enable/%s" % eport)
-    return "engine on port %s cycled via daemon %s:%s" % (eport, host, dport)
+    # Stop just this engine. The ArchiveDaemon's update_schedule sets a daily
+    # engine's next_start to "now" the moment it sees the engine is not running,
+    # then start_engines respawns it (with the new config) on its next loop.
+    # The daemon checks every ~30s, which is too long to block this web request
+    # on -- so we stop it and return immediately, telling the user to expect it
+    # back shortly and to verify in Archiver Status. We do NOT claim "restarted"
+    # because we don't wait to confirm it.
+    _run("stop_engine", archiver)
+    return ("stop sent on port %s; the ArchiveDaemon should restart it within "
+            "~30s with the new config -- verify in Archiver Status" % eport)
 
 
 def _daemon_http(host, port, path):
