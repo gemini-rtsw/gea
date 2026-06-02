@@ -834,6 +834,17 @@ def _run_args(argv):
         env.setdefault("GEA_HOST", os.environ.get("GEA_HOST", ""))
     except Exception:
         pass
+    # Put $GEA_BASE/bin on PATH. update_config shells out to bare-name GEA tools
+    # (e.g. `ConvertEngineConfig`, which writes <archiver>-group.xml) and relies
+    # on PATH to find them. The software login has /gemsoft/opt/gea/bin on PATH
+    # via the GEA profile, but the apache CGI does NOT -- so under apache the
+    # bare `ConvertEngineConfig` was not found, system() failed, and (because
+    # update_config never checks that return) group.xml was silently NOT
+    # regenerated. The .cnfg got the new channel but the engine reloaded a stale
+    # group.xml on restart, so the channel never appeared. Prepending the bin dir
+    # makes the web path regenerate group.xml exactly like the software login.
+    geabin = os.path.join(env.get("GEA_BASE", _base_dir()), "bin")
+    env["PATH"] = geabin + os.pathsep + env.get("PATH", "/usr/bin:/bin")
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 env=env)
