@@ -55,6 +55,33 @@ def cnfg_path(archiver):
 def archiveconfig_path():
     return os.path.join(_conf_dir(), "archiveconfig.xml")
 
+def _group_xml_paths(archiver):
+    """All <archiver>-group.xml files under GEA_DATA (the file update_config
+    regenerates and the engine reads). Usually one; search to be robust to the
+    daemon-dir layout."""
+    base = GEAVars.path.fileSys.geaData
+    name = archiver + "-group.xml"
+    hits = []
+    for root, _dirs, files in os.walk(base):
+        if name in files:
+            hits.append(os.path.join(root, name))
+    return hits
+
+def _pv_in_group_xml(archiver, pv):
+    """True if pv appears in the engine's regenerated group.xml. Used to verify
+    update_config actually took effect (catch silent regeneration failures)."""
+    for path in _group_xml_paths(archiver):
+        try:
+            f = open(path)
+            try:
+                if pv in f.read():
+                    return True
+            finally:
+                f.close()
+        except IOError:
+            pass
+    return False
+
 
 def list_archivers():
     """Archiver names from archiveconfig.xml <engine directory='...'>."""
@@ -349,6 +376,14 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
             page_bak = _write_atomic(chpath, "\n".join(chlines))
         if need_cnfg:
             _run("update_config", archiver)      # fast; also validates the .cnfg
+            # Verify update_config actually regenerated the group.xml with this
+            # PV. If it ran but didn't write (e.g. wrong env/path under apache),
+            # don't falsely report success -- fail loudly and roll back.
+            if not _pv_in_group_xml(archiver, pv):
+                raise ChannelError(
+                    "update_config ran but '%s' did not appear in the engine's "
+                    "group.xml -- the regenerated config did not take effect "
+                    "(check GEA_BASE/GEA_CONF/GEA_DATA for the web user)" % pv)
     except Exception:
         if page_bak:
             _restore(chpath, page_bak)
@@ -763,17 +798,31 @@ def _run(script, arg):
 
 def _run_args(argv):
     """Run a GEA bin script with arbitrary args (e.g. ['update_indices','-s','pcs']),
-    synchronously; raise on non-zero. Sourcing the full GEA env is unnecessary
-    here -- the CGI already has it."""
+    synchronously; raise on non-zero. Pass an explicit GEA environment so the
+    perl scripts resolve their paths/libs even when the CGI (apache) process was
+    not started with the full GEA profile -- otherwise update_config can run but
+    compute the wrong output path and silently regenerate nothing."""
     cmd = [os.path.join(_base_dir(), "bin", argv[0])] + list(argv[1:])
+    env = dict(os.environ)
+    # Fill the four vars geautils/update_config need, from GEAVars (which the
+    # frontend resolves correctly). Only set if missing, so a real env wins.
+    env.setdefault("GEA_BASE", GEAVars.path.fileSys.geaRoot)
+    env.setdefault("GEA_CONF", GEAVars.path.fileSys.geaConf)
+    env.setdefault("GEA_DATA", GEAVars.path.fileSys.geaData)
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        env.setdefault("GEA_HOST", os.environ.get("GEA_HOST", ""))
+    except Exception:
+        pass
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                env=env)
         out, err = proc.communicate()
     except OSError, e:
         raise ChannelError("%s could not run: %s" % (argv[0], e))
     if proc.returncode != 0:
         msg = (err or out or "").strip()
         raise ChannelError("%s failed: %s" % (argv[0], msg[:500]))
+    return (out or "") + (err or "")
 
 
 def restart_one_engine(archiver):
