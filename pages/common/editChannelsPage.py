@@ -99,6 +99,20 @@ class EditChannelsPage(GeaBasePage):
         if page and section and (self._acted or not has_action):
             self._renderOnce(page, section)
 
+    def _auto_edit_js(self):
+        """After an Add, emit JS that fills the form as an EDIT of the just-added
+        PV and submits it -- doing automatically the manual 'edit then save' that
+        is known to refresh the dialog. Empty string when there's nothing to do."""
+        ae = getattr(self, "_auto_edit", None)
+        if not ae:
+            return ""
+        return ("if(window.name!=='_geaAutoEdit'){window.name='_geaAutoEdit';"
+                "fillEdit(%s,%s,%s,%s,%s);"
+                "document.getElementById('f_form').submit();}"
+                "else{window.name='';}"
+                % (_js_str(ae["pv"]), _js_str(ae["label"]), _js_str(ae["fmt"]),
+                   _js_str(ae["period"]), _js_str(ae["mode"])))
+
     def _doActionMerged(self, p, page, section):
         """Perform the one add/edit/delete/setsec/restart. `p` is the merged
         params dict. Returns a note str."""
@@ -128,6 +142,11 @@ class EditChannelsPage(GeaBasePage):
                 r = gea_channel.add_channel(archiver, add_pv, period=period,
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
+                # Auto-fire an edit of the just-added channel so the dialog
+                # refreshes exactly the way a manual edit press does (which works).
+                self._auto_edit = {"pv": r["pv"], "fmt": (fmt or "Plot"),
+                                   "label": (label or ""), "period": str(period),
+                                   "mode": mode}
                 return _pending(r, "Saved '%s' to '%s'." % (r["pv"], section))
             elif edit_pv:
                 r = gea_channel.edit_channel(archiver, edit_pv, period=period,
@@ -352,7 +371,8 @@ function resetForm(){
   document.getElementById('f_submit').value='Add channel';
   document.getElementById('formtitle').innerHTML='Add a channel to this section';
 }
-</script>""")
+%s
+</script>""" % self._auto_edit_js())
         h.append('</div>')
         h.append('</body></html>')
         return "\n".join(h)
