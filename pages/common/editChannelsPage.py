@@ -95,6 +95,13 @@ class EditChannelsPage(GeaBasePage):
         if page and section and (self._acted or not has_action):
             self._renderOnce(page, section)
 
+        try:
+            import sys
+            sys.stderr.write("EDITCHAN this_req=%r merged=%r acted=%r rendered=%r\n"
+                % (dict(request), p, self._acted, getattr(self, "_rendered", False)))
+        except Exception:
+            pass
+
     def _doActionMerged(self, p, page, section):
         """Perform the one add/edit/delete/setsec/restart. `p` is the merged
         params dict. Returns a note str."""
