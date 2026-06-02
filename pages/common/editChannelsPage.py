@@ -146,15 +146,10 @@ class EditChannelsPage(GeaBasePage):
             self.html.doc.append("<p>Missing PAGE or SECTION.</p>")
             return
         archiver = _archiver_for_page(page)
-        note = self._action_note
-        body = self._render(page, section, archiver)
-        if note:
-            body = ('<div style="margin:1em;padding:6px;background:#e8f0ff;'
-                    'border:1px solid #aac;font-family:sans-serif;">%s</div>%s'
-                    % (note, body))
+        body = self._render(page, section, archiver, note=self._action_note)
         self.html.doc.append(body)
 
-    def _render(self, page, section, archiver):
+    def _render(self, page, section, archiver, note=None):
         try:
             chpath = gea_channel.resolve_page(page)
             rows = gea_channel.section_channels(chpath, section, archiver)
@@ -285,6 +280,11 @@ class EditChannelsPage(GeaBasePage):
         h.append('<input type="submit" id="f_submit" value="Add channel"/> '
                  '<input type="button" value="Clear" onclick="resetForm();"/>')
         h.append('</form>')
+        # Show the outcome of the last action HERE, by the button -- the list can
+        # be long, so a message at the top would scroll out of view.
+        if note:
+            h.append('<div style="margin:1em 0;padding:8px;background:#e8f0ff;'
+                     'border:1px solid #88a;font-weight:bold;">%s</div>' % note)
         # Restart warning + button, right here by Save so it's seen after saving:
         # saving writes the config but does NOT restart -- add everything, then
         # click this once to apply it all.
