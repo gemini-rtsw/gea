@@ -271,51 +271,39 @@ class EditChannelsPage(GeaBasePage):
                  'see them.</p>')
         h.append('<hr/>')
 
-        # Add/Save is a plain <a> link, NOT a form and NOT a JS navigation.
-        # The delete link (a real <a href> rendered server-side) refreshes the
-        # iframe on the first click; every Add variant that built the URL in
-        # onclick or assigned window.location needed two clicks. So we make Add
-        # the same kind of link: its href is kept current by syncAdd() (below) as
-        # the fields change, and the browser just follows it natively on click.
+        # Add/Save is a REAL HTML <form> GET submit -- the same native browser
+        # navigation as the delete link, and identical to how Edit submits (Edit
+        # only pre-fills these same fields, then submits this same form). A form
+        # submit serializes the field VALUES at submit time, so there is no
+        # JS-built URL and no <a> href that can be read stale before onclick runs
+        # -- that timing gap is exactly why the old <a>/window.location Add needed
+        # two clicks while Edit (whose href was set during idle) worked. The PV
+        # field is named ADD; edit mode renames it to EDIT (fillEdit), like the
+        # original working version. The form action is `here` (same base as the
+        # delete link); target=_self keeps it in this iframe.
         h.append('<h4 id="formtitle">Add a channel to this section</h4>')
-        h.append('<input type="hidden" id="f_page" value="%s"/>' % page)
-        h.append('<input type="hidden" id="f_section" value="%s"/>' % section)
+        h.append('<form id="f_form" method="GET" action="%s" target="_self" '
+                 'onsubmit="return canAdd();">' % here)
+        h.append('<input type="hidden" name="PAGE" value="%s"/>' % page)
+        h.append('<input type="hidden" name="SECTION" value="%s"/>' % section)
         h.append('<table style="width:100%;max-width:640px;">')
-        # Every field has onkeyup+onchange="syncAdd()" so the Add link's href is
-        # rebuilt live as you type/select -- the link is always ready to follow
-        # natively on the first click (no URL building at click time).
-        sync = 'onkeyup="syncAdd()" onchange="syncAdd()"'
         h.append('<tr><td style="width:7em;">PV name:</td>'
-                 '<td><input type="text" id="f_pv" %s placeholder="m1:x:y.VAL"/></td></tr>'
-                 % sync)
+                 '<td><input type="text" id="f_pv" name="ADD" placeholder="m1:x:y.VAL"/></td></tr>')
         h.append('<tr><td>Label:</td>'
-                 '<td><input type="text" id="f_label" %s/></td></tr>' % sync)
-        h.append('<tr><td>Display as:</td><td><select id="f_fmt" %s>'
+                 '<td><input type="text" id="f_label" name="LABEL"/></td></tr>')
+        h.append('<tr><td>Display as:</td><td><select id="f_fmt" name="FORMAT">'
                  '<option value="Plot">Plot</option>'
-                 '<option value="Spreadsheet">Spreadsheet</option></select></td></tr>'
-                 % sync)
+                 '<option value="Spreadsheet">Spreadsheet</option></select></td></tr>')
         h.append('<tr><td>Period (s):</td>'
-                 '<td><input type="text" id="f_period" value="1" %s '
-                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode" %s>'
-                 '<option>Monitor</option><option>Scan</option></select></td></tr>'
-                 % (sync, sync))
+                 '<td><input type="text" id="f_period" name="PERIOD" value="1" '
+                 'style="width:5em;"/> &nbsp; Mode: <select id="f_mode" name="MODE">'
+                 '<option>Monitor</option><option>Scan</option></select></td></tr>')
         h.append('</table>')
-        # Add/Save is a REAL <a> whose href is kept in sync with the form fields
-        # (syncAdd, run on every field change + once at load). Clicking it is then
-        # a plain native link navigation -- byte-for-byte the same mechanism as the
-        # delete link, which always refreshes the iframe on the first click. We do
-        # NOT build the URL in onclick or assign window.location: every JS-driven
-        # variant of that needed two clicks (the first click followed the stale
-        # href / was swallowed by the '#' fragment). The href is live, so there is
-        # nothing to compute at click time. onclick only blocks submit on an empty
-        # PV. Start href at the base URL so it's never '#'.
-        h.append('<a id="f_submit" href="%s" onclick="return canAdd();" '
-                 'style="display:inline-block;padding:5px 14px;border:1px solid '
-                 '#888;background:#eee;text-decoration:none;color:#000;">'
-                 'Add channel</a> &nbsp; '
-                 '<a href="#" onclick="resetForm();return false;">Clear</a>'
-                 % here)
-        h.append('<input type="hidden" id="f_base" value="%s"/>' % here)
+        h.append('<input type="submit" id="f_submit" value="Add channel" '
+                 'style="padding:5px 14px;border:1px solid #888;background:#eee;"/>'
+                 ' &nbsp; '
+                 '<a href="#" onclick="resetForm();return false;">Clear</a>')
+        h.append('</form>')
         # Show the outcome of the last action HERE, by the button -- the list can
         # be long, so a message at the top would scroll out of view.
         if note:
@@ -336,50 +324,34 @@ class EditChannelsPage(GeaBasePage):
                      'style="font-size:1.1em;">'
                      '&#9888; <b>Restart archiver %s now</b></a></div>'
                      % (resturl, archiver, archiver))
-        # syncAdd() rebuilds the Add link's href from the fields on every change
-        # (and once at load). The link is then followed natively on click -- the
-        # SAME first-click-refreshes mechanism delete uses. _editMode picks ADD vs
-        # EDIT. canAdd() only blocks an empty PV. No window.location, no '#'.
+        # The form submits natively (GET) just like the delete link navigates.
+        # JS does NO navigation: it only (a) validates a non-empty PV on submit,
+        # and (b) for Edit, pre-fills the fields and flips the PV field's name
+        # from ADD to EDIT. Add and Edit therefore travel the IDENTICAL submit
+        # path -- the only difference is the action key in the serialized form.
         h.append("""<script type="text/javascript">
-var _editMode=false;
 function gv(id){var e=document.getElementById(id);return e?e.value:'';}
 function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
-function syncAdd(){
-  var a=document.getElementById('f_submit'); if(!a) return;
-  a.href = gv('f_base')
-    + '?PAGE=' + encodeURIComponent(gv('f_page'))
-    + '&SECTION=' + encodeURIComponent(gv('f_section'))
-    + (_editMode ? '&EDIT=' : '&ADD=') + encodeURIComponent(gv('f_pv'))
-    + '&LABEL=' + encodeURIComponent(gv('f_label'))
-    + '&FORMAT=' + encodeURIComponent(gv('f_fmt'))
-    + '&PERIOD=' + encodeURIComponent(gv('f_period'))
-    + '&MODE=' + encodeURIComponent(gv('f_mode'));
-}
 function canAdd(){
-  // The href is already correct (kept live by syncAdd). Only guard empty PV;
-  // syncAdd once more here in case a value changed without firing an event.
   if(!gv('f_pv')){ alert('Enter a PV name.'); return false; }
-  syncAdd();
-  return true;   // follow the live link natively, exactly like delete
+  return true;   // let the browser submit the form natively
 }
 function fillEdit(pv,label,fmt,period,mode){
   setField('f_pv',pv); setField('f_label',label);
   setField('f_fmt',fmt||'Plot'); setField('f_period',period||'1'); setField('f_mode',mode||'Monitor');
-  _editMode=true;
-  var pvf=document.getElementById('f_pv'); pvf.readOnly=true;
-  document.getElementById('f_submit').innerHTML='Save changes';
+  var pvf=document.getElementById('f_pv');
+  pvf.name='EDIT'; pvf.readOnly=true;        // submit as an edit, lock the PV
+  document.getElementById('f_submit').value='Save changes';
   document.getElementById('formtitle').innerHTML='Edit channel: '+pv;
-  syncAdd(); pvf.focus();
+  pvf.focus();
 }
 function resetForm(){
-  _editMode=false;
-  var pvf=document.getElementById('f_pv'); pvf.readOnly=false; pvf.value='';
+  var pvf=document.getElementById('f_pv');
+  pvf.name='ADD'; pvf.readOnly=false; pvf.value='';
   setField('f_label',''); setField('f_fmt','Plot'); setField('f_period','1'); setField('f_mode','Monitor');
-  document.getElementById('f_submit').innerHTML='Add channel';
+  document.getElementById('f_submit').value='Add channel';
   document.getElementById('formtitle').innerHTML='Add a channel to this section';
-  syncAdd();
 }
-syncAdd();   // make the link valid before the first click
 </script>""")
         h.append('</div>')
         h.append('</body></html>')
