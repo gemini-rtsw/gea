@@ -612,17 +612,23 @@ def _restore(path, bak):
 # ---- run the perl scripts (full GEA env is already present in the CGI) ----
 
 def _run(script, arg):
-    """Run a GEA bin script synchronously; raise on non-zero. For fast steps
-    like update_config (which also validates the .cnfg we just wrote)."""
-    cmd = [os.path.join(_base_dir(), "bin", script), arg]
+    """Run a GEA bin script with a single arg, synchronously; raise on non-zero."""
+    _run_args([script, arg])
+
+
+def _run_args(argv):
+    """Run a GEA bin script with arbitrary args (e.g. ['update_indices','-s','pcs']),
+    synchronously; raise on non-zero. Sourcing the full GEA env is unnecessary
+    here -- the CGI already has it."""
+    cmd = [os.path.join(_base_dir(), "bin", argv[0])] + list(argv[1:])
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = proc.communicate()
     except OSError, e:
-        raise ChannelError("%s could not run: %s" % (script, e))
+        raise ChannelError("%s could not run: %s" % (argv[0], e))
     if proc.returncode != 0:
         msg = (err or out or "").strip()
-        raise ChannelError("%s failed: %s" % (script, msg[:500]))
+        raise ChannelError("%s failed: %s" % (argv[0], msg[:500]))
 
 
 def restart_one_engine(archiver):
@@ -660,14 +666,25 @@ def restart_one_engine(archiver):
     # avoids DNS / cross-host firewall issues (GEA_HOST may name a sibling box
     # the frontend can't route to).
     host = "localhost"
+
+    # Mirror what start_gea does, but for this one archiver. start_gea runs
+    # update_config all + update_indices all + run_daemon all. We already ran
+    # update_config <archiver> (caller). The missing piece was update_indices:
+    # do it per-archiver with the -s flag so this engine's index config is
+    # refreshed too, exactly like the full start_gea -- then cycle the engine.
+    _run_args(["update_indices", "-s", archiver])
+
+    # Cycle just this engine via the daemon's disable/enable (same as the
+    # Archiver Status buttons): disable stops it; wait until it's really down;
+    # enable forces the daemon to restart it immediately with the new config.
     _daemon_http(host, dport, "/disable/%s" % eport)
     stopped = _wait_until_down(host, eport, timeout=15)
     _daemon_http(host, dport, "/enable/%s" % eport)
     if stopped:
-        return ("disabled+enabled on port %s; daemon will restart it within a "
-                "few seconds -- verify in Archiver Status" % eport)
-    return ("enable sent on port %s, but the engine did not confirm stopped in "
-            "time; check Archiver Status (re-enable if still disabled)" % eport)
+        return ("reindexed + cycled engine on port %s; daemon is restarting it "
+                "with the new config -- verify in Archiver Status" % eport)
+    return ("reindexed + enable sent on port %s, but the engine did not confirm "
+            "stopped in time; check Archiver Status" % eport)
 
 
 def _wait_until_down(host, port, timeout=15):
