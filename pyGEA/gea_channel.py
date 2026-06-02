@@ -80,6 +80,28 @@ def _calist(archiver):
     return []
 
 
+def _engine_ports(archiver):
+    """
+    For one archiver, return (daemon_port, engine_port) from archiveconfig.xml.
+    The daemon's HTTP interface (on daemon_port) drives disable/enable of an
+    engine addressed by its engine_port. Returns (None, None) if not found.
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        tree = ET.parse(archiveconfig_path())
+    except Exception, e:
+        raise ChannelError("Cannot read archiveconfig.xml: %s" % e)
+    for daemon in tree.iter("daemon"):
+        dport = daemon.find("port")
+        dport = dport.text.strip() if (dport is not None and dport.text) else None
+        for e in daemon.iter("engine"):
+            if e.get("directory") == archiver:
+                ep = e.find("port")
+                ep = ep.text.strip() if (ep is not None and ep.text) else None
+                return (dport, ep)
+    return (None, None)
+
+
 def existing_pvs(archiver):
     pvs = set()
     try:
@@ -193,8 +215,7 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
         if chlines is not None:
             page_bak = _write_atomic(chpath, "\n".join(chlines))
         if need_cnfg:
-            _run("update_config", archiver)
-            _run("stop_engine", archiver)        # daemon auto-restarts it
+            _run("update_config", archiver)      # fast; also validates the .cnfg
     except Exception:
         if page_bak:
             _restore(chpath, page_bak)
@@ -202,10 +223,16 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
             _restore(cnfg_path_, cnfg_bak)
         raise
 
+    # Files are committed + update_config succeeded. Now trigger the full
+    # restart in the background (only needed when the .cnfg actually changed).
+    restart_info = None
+    if need_cnfg:
+        restart_info = restart_one_engine(archiver)
+
     return {
         "archiver": archiver, "pv": pv, "period": period, "mode": mode,
-        "restarted": need_cnfg, "calist": cal,
-        "page": page, "section": section, "warnings": warnings,
+        "restart_triggered": need_cnfg, "restart_info": restart_info,
+        "calist": cal, "page": page, "section": section, "warnings": warnings,
     }
 
 
@@ -308,7 +335,6 @@ def delete_channel(archiver, pv, page=None, section=None):
             page_bak = _write_atomic(chpath, chcontent)
         if archived:
             _run("update_config", archiver)
-            _run("stop_engine", archiver)
     except Exception:
         if page_bak:
             _restore(chpath, page_bak)
@@ -316,8 +342,9 @@ def delete_channel(archiver, pv, page=None, section=None):
             _restore(cnfg_path_, cnfg_bak)
         raise
 
+    restart_info = restart_one_engine(archiver) if archived else None
     return {"archiver": archiver, "pv": pv, "page": page, "section": section,
-            "restarted": bool(archived)}
+            "restart_triggered": bool(archived), "restart_info": restart_info}
 
 
 def edit_channel(archiver, pv, period=None, mode=None,
@@ -370,7 +397,6 @@ def edit_channel(archiver, pv, period=None, mode=None,
             page_bak = _write_atomic(chpath, chcontent)
         if cnfg_changed:
             _run("update_config", archiver)
-            _run("stop_engine", archiver)
     except Exception:
         if page_bak:
             _restore(chpath, page_bak)
@@ -378,8 +404,9 @@ def edit_channel(archiver, pv, period=None, mode=None,
             _restore(cnfg_path_, cnfg_bak)
         raise
 
+    restart_info = restart_one_engine(archiver) if cnfg_changed else None
     return {"archiver": archiver, "pv": pv, "page": page, "section": section,
-            "restarted": cnfg_changed}
+            "restart_triggered": cnfg_changed, "restart_info": restart_info}
 
 
 def _display_line(pv, fmt, label):
@@ -585,6 +612,8 @@ def _restore(path, bak):
 # ---- run the perl scripts (full GEA env is already present in the CGI) ----
 
 def _run(script, arg):
+    """Run a GEA bin script synchronously; raise on non-zero. For fast steps
+    like update_config (which also validates the .cnfg we just wrote)."""
     cmd = [os.path.join(_base_dir(), "bin", script), arg]
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -594,3 +623,57 @@ def _run(script, arg):
     if proc.returncode != 0:
         msg = (err or out or "").strip()
         raise ChannelError("%s failed: %s" % (script, msg[:500]))
+
+
+def restart_one_engine(archiver):
+    """
+    Restart ONLY this archiver's engine, using the ArchiveDaemon's own
+    disable/enable mechanism -- not stop_gea/start_gea (which would drop all 24
+    archivers and take minutes).
+
+    The daemon's HTTP interface (on the daemon's port) supports:
+      GET /disable/<engine_port>  -> writes DISABLED.txt and stops the engine
+      GET /enable/<engine_port>   -> removes DISABLED.txt and forces an
+                                     immediate re-check, so the daemon restarts
+                                     just that engine within a second or two.
+
+    This is the daemon's designed way to cycle one engine, and (unlike a bare
+    stop_engine) the enable step forces the restart instead of waiting for the
+    next scheduled start. Returns a short status string. Raises ChannelError if
+    the ports can't be found or the daemon can't be reached.
+    """
+    dport, eport = _engine_ports(archiver)
+    if not dport or not eport:
+        raise ChannelError("Could not find daemon/engine ports for '%s' in "
+                           "archiveconfig.xml" % archiver)
+    host = os.environ.get("GEA_HOST", "localhost")
+
+    # disable (stop) then enable (force restart). Small reads; quick.
+    _daemon_http(host, dport, "/disable/%s" % eport)
+    _daemon_http(host, dport, "/enable/%s" % eport)
+    return "engine on port %s cycled via daemon %s:%s" % (eport, host, dport)
+
+
+def _daemon_http(host, port, path):
+    """GET path from the ArchiveDaemon's HTTP interface; raise on failure."""
+    import socket
+    try:
+        s = socket.create_connection((host, int(port)), timeout=10)
+    except (socket.error, ValueError), e:
+        raise ChannelError("Cannot reach ArchiveDaemon at %s:%s (%s)"
+                           % (host, port, e))
+    try:
+        s.sendall("GET %s HTTP/1.0\r\n\r\n" % path)
+        data = ""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    finally:
+        s.close()
+    # The daemon returns an HTML page; an explicit ERROR means the action failed.
+    if "ERROR" in data:
+        raise ChannelError("Daemon rejected %s: %s"
+                           % (path, data.split("ERROR", 1)[1][:200]))
+    return data

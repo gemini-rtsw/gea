@@ -86,8 +86,8 @@ class EditChannelsPage(GeaBasePage):
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
                 note = "Added '%s' to '%s'." % (r["pv"], section)
-                if r.get("restarted"):
-                    note += " Archiver '%s' restarted." % archiver
+                if r.get("restart_triggered"):
+                    note += " Archiver '%s' restarted (just that one engine)." % archiver
                 for w in r.get("warnings", []):
                     note += " " + w
                 stream.write(note)
@@ -96,15 +96,15 @@ class EditChannelsPage(GeaBasePage):
                         mode=mode, page=page, section=section,
                         fmt=(fmt or None), label=(label or None))
                 note = "Updated '%s'." % r["pv"]
-                if r.get("restarted"):
-                    note += " Archiver '%s' restarted." % archiver
+                if r.get("restart_triggered"):
+                    note += " Archiver '%s' restarted (just that one engine)." % archiver
                 stream.write(note)
             elif del_pv:
                 r = gea_channel.delete_channel(archiver, del_pv,
                         page=page, section=section)
                 note = "Deleted '%s' from '%s'." % (r["pv"], section)
-                if r.get("restarted"):
-                    note += " Archiver '%s' restarted." % archiver
+                if r.get("restart_triggered"):
+                    note += " Archiver '%s' restarted (just that one engine)." % archiver
                 stream.write(note)
         except gea_channel.ChannelError, e:
             stream.write("Error: %s (no changes kept)" % e)
