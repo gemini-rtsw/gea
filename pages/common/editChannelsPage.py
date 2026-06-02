@@ -73,6 +73,15 @@ class EditChannelsPage(GeaBasePage):
         page    = request.get("PAGE", "")
         section = request.get("SECTION", "")
 
+        # DEBUG: dump exactly what arrived, to the apache error log, so we can
+        # see what the first vs second click actually sends.
+        try:
+            import sys
+            sys.stderr.write("EDITCHAN request keys=%r acted=%r\n"
+                             % (dict(request), getattr(self, "_acted", None)))
+        except Exception:
+            pass
+
         # An "action" request is one carrying a verb param. The empty local
         # request has none -> it only triggers the (guarded) render, never a write.
         action_keys = ("ADD", "EDIT", "DEL", "SETSEC", "RESTART")
