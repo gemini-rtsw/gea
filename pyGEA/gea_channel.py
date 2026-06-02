@@ -320,6 +320,128 @@ def delete_channel(archiver, pv, page=None, section=None):
             "restarted": bool(archived)}
 
 
+def edit_channel(archiver, pv, period=None, mode=None,
+                 page=None, section=None, fmt=None, label=None):
+    """
+    Change an existing channel in place: rewrite its display line (label/format)
+    in the page section, and its .cnfg line (period/mode). The PV name itself is
+    not changed (changing it is a delete + add). Restarts the archiver only if
+    period/mode actually changed. All-or-nothing with .bak rollback.
+    """
+    pv = (pv or "").strip()
+    if not pv:
+        raise ChannelError("No PV given to edit")
+    if mode is not None and mode not in VALID_MODES:
+        raise ChannelError("Mode must be Monitor or Scan")
+
+    # ---- stage the .channels display-line rewrite ----------------------------
+    chpath = None
+    chcontent = None
+    if page and section:
+        chpath = resolve_page(page)
+        # Build the new display line, then replace the old one in place.
+        newline = _display_line(pv, fmt, label)
+        chcontent = _channels_replaced(chpath, section, pv, newline)
+
+    # ---- decide whether the .cnfg (period/mode) changed ----------------------
+    cnfg_changed = False
+    new_cnfg = None
+    if archiver and (period is not None or mode is not None) and pv in existing_pvs(archiver):
+        cur = cnfg_meta(archiver).get(pv, {})
+        new_period = str(period) if period is not None else cur.get("period", "1")
+        new_mode   = mode if mode is not None else cur.get("mode", "Monitor")
+        try:
+            ip = int(new_period)
+            if ip <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ChannelError("Period must be a positive whole number")
+        if (new_period, new_mode) != (cur.get("period", ""), cur.get("mode", "")):
+            cnfg_changed = True
+            new_cnfg = _cnfg_replaced(archiver, pv, ip, new_mode)
+
+    cnfg_bak = None
+    page_bak = None
+    cnfg_path_ = cnfg_path(archiver) if archiver else None
+    try:
+        if cnfg_changed:
+            cnfg_bak = new_cnfg            # already written (returns .bak)
+        if chcontent is not None:
+            page_bak = _write_atomic(chpath, chcontent)
+        if cnfg_changed:
+            _run("update_config", archiver)
+            _run("stop_engine", archiver)
+    except Exception:
+        if page_bak:
+            _restore(chpath, page_bak)
+        if cnfg_bak:
+            _restore(cnfg_path_, cnfg_bak)
+        raise
+
+    return {"archiver": archiver, "pv": pv, "page": page, "section": section,
+            "restarted": cnfg_changed}
+
+
+def _display_line(pv, fmt, label):
+    parts = [pv]
+    if fmt:
+        if fmt not in ("Plot", "Spreadsheet"):
+            raise ChannelError("Format must be Plot or Spreadsheet")
+        parts.append("{'FORMAT':'%s'}" % fmt)
+    line = " ".join(parts)
+    if label:
+        label = label.strip().lstrip("#").strip()
+        if "{" in label or "}" in label or "\n" in label:
+            raise ChannelError("Label has illegal characters")
+        line += "  # " + label
+    return line
+
+
+def _channels_replaced(path, section, pv, newline):
+    """Return file content with the PV's line in `section` replaced by newline."""
+    f = open(path)
+    try:
+        lines = f.read().split("\n")
+    finally:
+        f.close()
+    in_sec = False
+    replaced = 0
+    for i, raw in enumerate(lines):
+        s = raw.strip()
+        if s.startswith(SECTION_MARK):
+            in_sec = (s[len(SECTION_MARK):].strip() == section)
+            continue
+        if in_sec and s and not s.startswith("#") and not s.startswith("!"):
+            val = raw.split("#", 1)[0]
+            b = val.find("{")
+            if b >= 0:
+                val = val[:b]
+            if val.strip() == pv:
+                lines[i] = newline
+                replaced += 1
+    if replaced == 0:
+        raise ChannelError("'%s' not found in section '%s'" % (pv, section))
+    return "\n".join(lines)
+
+
+def _cnfg_replaced(archiver, pv, period, mode):
+    """Rewrite the PV's .cnfg line with new period/mode. Returns .bak path."""
+    path = cnfg_path(archiver)
+    bak = path + ".bak"
+    shutil.copy2(path, bak)
+    f = open(path)
+    try:
+        lines = f.read().split("\n")
+    finally:
+        f.close()
+    for i, raw in enumerate(lines):
+        s = raw.strip()
+        if s and not s.startswith("#") and not s.startswith("!") and s.split()[0] == pv:
+            lines[i] = "%-32s %d  %s" % (pv, period, mode)
+    _write_atomic(path, "\n".join(lines))
+    return bak
+
+
 def _channels_without(path, section, pv):
     """Return file content with the PV's display line removed from `section`."""
     f = open(path)

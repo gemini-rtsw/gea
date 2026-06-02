@@ -26,6 +26,11 @@ from GEARequest import RequestCollection, Request
 import gea_channel
 
 
+def _js(s):
+    """Escape a value for safe inclusion inside a single-quoted JS string."""
+    return (s or "").replace("\\", "\\\\").replace("'", "\\'").replace('"', "&quot;")
+
+
 def _archiver_for_page(pagefile):
     """A page file 'systems/pcsPage.channels' archives via the 'pcs' engine.
     Strip dir + 'Page.channels' to get the archiver name; verify it exists."""
@@ -62,6 +67,7 @@ class EditChannelsPage(GeaBasePage):
         section = request.get("SECTION", "")
         add_pv  = request.get("ADD", "")
         del_pv  = request.get("DEL", "")
+        edit_pv = request.get("EDIT", "")
         fmt     = request.get("FORMAT", "")
         label   = request.get("LABEL", "")
         period  = request.get("PERIOD", "1")
@@ -73,7 +79,7 @@ class EditChannelsPage(GeaBasePage):
 
         archiver = _archiver_for_page(page)
 
-        # Handle an add or delete action first, report the outcome.
+        # Handle an add/delete/edit action first, report the outcome.
         try:
             if add_pv:
                 r = gea_channel.add_channel(archiver, add_pv, period=period,
@@ -84,6 +90,14 @@ class EditChannelsPage(GeaBasePage):
                     note += " Archiver '%s' restarted." % archiver
                 for w in r.get("warnings", []):
                     note += " " + w
+                stream.write(note)
+            elif edit_pv:
+                r = gea_channel.edit_channel(archiver, edit_pv, period=period,
+                        mode=mode, page=page, section=section,
+                        fmt=(fmt or None), label=(label or None))
+                note = "Updated '%s'." % r["pv"]
+                if r.get("restarted"):
+                    note += " Archiver '%s' restarted." % archiver
                 stream.write(note)
             elif del_pv:
                 r = gea_channel.delete_channel(archiver, del_pv,
@@ -97,7 +111,7 @@ class EditChannelsPage(GeaBasePage):
         except Exception, e:
             stream.write("Unexpected error: %s (no changes kept)" % e)
 
-        # Render the section's current channels + the add form.
+        # Render the section's current channels + the add/edit form.
         html.doc.append(self._render(page, section, archiver))
 
     def _render(self, page, section, archiver):
@@ -124,42 +138,70 @@ class EditChannelsPage(GeaBasePage):
         for row in rows:
             delurl = "%s?%s" % (here, qp(PAGE=page, SECTION=section, DEL=row["pv"]))
             arch = "yes" if row.get("archived") else "<b>no</b>"
+            # 'edit' pre-fills the form below with this row's values (JS), so you
+            # change label/format/period/mode and resubmit as an edit.
+            jsargs = "'%s','%s','%s','%s','%s'" % (
+                _js(row["pv"]), _js(row["label"]), _js(row.get("format") or "Plot"),
+                _js(row.get("period") or "1"), _js(row.get("mode") or "Monitor"))
             h.append("<tr><td><code>%s</code></td><td>%s</td>"
                      "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
-                     '<td><a href="%s" onclick="return confirm('
+                     '<td><a href="#" onclick="fillEdit(%s);return false;">edit</a>'
+                     ' &nbsp; '
+                     '<a href="%s" onclick="return confirm('
                      "'Delete %s%s?')\">delete</a></td></tr>"
                      % (row["pv"], row["label"] or "&nbsp;",
                         row.get("format") or "Plot",
                         row.get("period") or "&nbsp;",
                         row.get("mode") or "&nbsp;",
-                        arch, delurl, row["pv"],
+                        arch, jsargs, delurl, row["pv"],
                         (" and restart "+archiver) if archiver else ""))
         if not rows:
             h.append('<tr><td colspan="7"><i>No channels in this section yet.</i></td></tr>')
         h.append("</table>")
 
-        # Add form (GET back to this page with ADD=...).
-        h.append('<h4>Add a channel to this section</h4>')
+        # One form, used for both Add and Edit. 'edit' links flip it to edit mode
+        # via JS (set the hidden mode field + the action field name + values).
+        h.append('<h4 id="formtitle">Add a channel to this section</h4>')
         h.append('<form method="GET" action="%s">' % here)
         h.append('<input type="hidden" name="PAGE" value="%s"/>' % page)
         h.append('<input type="hidden" name="SECTION" value="%s"/>' % section)
-        h.append('PV name: <input type="text" name="ADD" size="34" '
+        # The action field: name="ADD" by default; edit mode renames it to EDIT.
+        h.append('PV name: <input type="text" id="f_pv" name="ADD" size="34" '
                  'placeholder="m1:x:y.VAL"/><br/>')
-        h.append('Label: <input type="text" name="LABEL" size="34"/><br/>')
-        h.append('Display as: <select name="FORMAT">'
+        h.append('Label: <input type="text" id="f_label" name="LABEL" size="34"/><br/>')
+        h.append('Display as: <select id="f_fmt" name="FORMAT">'
                  '<option value="">Plot</option>'
                  '<option value="Plot">Plot</option>'
                  '<option value="Spreadsheet">Spreadsheet</option></select><br/>')
-        h.append('Period (s): <input type="text" name="PERIOD" value="1" size="4"/> '
-                 'Mode: <select name="MODE">'
+        h.append('Period (s): <input type="text" id="f_period" name="PERIOD" value="1" size="4"/> '
+                 'Mode: <select id="f_mode" name="MODE">'
                  '<option>Monitor</option><option>Scan</option></select><br/><br/>')
-        h.append('<input type="submit" value="Add channel"/>')
+        h.append('<input type="submit" id="f_submit" value="Add channel"/> '
+                 '<input type="button" value="Clear" onclick="resetForm();"/>')
         h.append('</form>')
         if archiver:
             h.append('<p style="color:#666;font-size:0.85em;">Adding a new PV '
                      'will restart archiver <code>%s</code> (a few seconds). '
-                     'An already-archived PV is added to the display only.</p>'
-                     % archiver)
+                     'Edits that change period/mode also restart it; label/format '
+                     'changes do not.</p>' % archiver)
+        # JS: fillEdit pre-fills + flips the form to edit; resetForm restores add.
+        h.append("""<script type="text/javascript">
+function setField(id,v){var e=document.getElementById(id);if(e)e.value=v;}
+function fillEdit(pv,label,fmt,period,mode){
+  setField('f_pv',pv); setField('f_label',label);
+  setField('f_fmt',fmt=='Plot'?'Plot':fmt); setField('f_period',period); setField('f_mode',mode);
+  var pvf=document.getElementById('f_pv'); pvf.name='EDIT'; pvf.readOnly=true;
+  document.getElementById('f_submit').value='Save changes';
+  document.getElementById('formtitle').innerHTML='Edit channel: '+pv;
+  pvf.focus();
+}
+function resetForm(){
+  var pvf=document.getElementById('f_pv'); pvf.name='ADD'; pvf.readOnly=false; pvf.value='';
+  setField('f_label',''); setField('f_fmt',''); setField('f_period','1'); setField('f_mode','Monitor');
+  document.getElementById('f_submit').value='Add channel';
+  document.getElementById('formtitle').innerHTML='Add a channel to this section';
+}
+</script>""")
         h.append('</div>')
         return "\n".join(h)
 
