@@ -26,8 +26,11 @@ import os
 import re
 import shutil
 import subprocess
+import logging
 
 import GEAVars
+
+log = logging.getLogger("gea_channel")
 
 # Conservative PV-name check; a malformed name would break ConvertEngineConfig.
 PV_RE = re.compile(r"^[A-Za-z0-9_]+(:[A-Za-z0-9_]+)*(\.[A-Za-z0-9_]+)?$")
@@ -798,10 +801,23 @@ def restart_one_engine(archiver):
 
     # Mirror what start_gea does, but for this one archiver. start_gea runs
     # update_config all + update_indices all + run_daemon all. We already ran
-    # update_config <archiver> (caller). The missing piece was update_indices:
-    # do it per-archiver with the -s flag so this engine's index config is
-    # refreshed too, exactly like the full start_gea -- then cycle the engine.
-    _run_args(["update_indices", "-s", archiver])
+    # update_config <archiver> (caller).
+    #
+    # update_indices refreshes the DATA-SERVER index/serverconfig (for reading
+    # archived data back into plots) -- it is NOT required for the engine to
+    # start recording the new channel (that's update_config + the restart). It
+    # also writes $GEA_BASE/etc/serverconfig.xml, which the web user often can't
+    # write. So run it best-effort: if it fails (e.g. permissions), warn but DO
+    # NOT abort the whole add -- the channel is archived regardless, and the
+    # index side gets sorted by the next update_indices/start_gea.
+    index_note = "reindexed; "
+    try:
+        _run_args(["update_indices", "-s", archiver])
+    except ChannelError, e:
+        log.warning("update_indices failed (non-fatal): %s", e)
+        index_note = ("(note: index refresh skipped -- %s; the channel is still "
+                      "archived, but plotting its history may lag until the next "
+                      "update_indices/start_gea) " % e)
 
     # Cycle just this engine via the daemon's disable/enable (same as the
     # Archiver Status buttons): disable stops it; wait until it's really down;
@@ -810,10 +826,10 @@ def restart_one_engine(archiver):
     stopped = _wait_until_down(host, eport, timeout=15)
     _daemon_http(host, dport, "/enable/%s" % eport)
     if stopped:
-        return ("reindexed + cycled engine on port %s; daemon is restarting it "
-                "with the new config -- verify in Archiver Status" % eport)
-    return ("reindexed + enable sent on port %s, but the engine did not confirm "
-            "stopped in time; check Archiver Status" % eport)
+        return ("%scycled engine on port %s; daemon is restarting it with the "
+                "new config -- verify in Archiver Status" % (index_note, eport))
+    return ("%senable sent on port %s, but the engine did not confirm stopped "
+            "in time; check Archiver Status" % (index_note, eport))
 
 
 def _wait_until_down(host, port, timeout=15):
