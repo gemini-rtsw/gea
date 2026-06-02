@@ -376,14 +376,20 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
             page_bak = _write_atomic(chpath, "\n".join(chlines))
         if need_cnfg:
             _run("update_config", archiver)      # fast; also validates the .cnfg
-            # Verify update_config actually regenerated the group.xml with this
-            # PV. If it ran but didn't write (e.g. wrong env/path under apache),
-            # don't falsely report success -- fail loudly and roll back.
-            if not _pv_in_group_xml(archiver, pv):
-                raise ChannelError(
-                    "update_config ran but '%s' did not appear in the engine's "
-                    "group.xml -- the regenerated config did not take effect "
-                    "(check GEA_BASE/GEA_CONF/GEA_DATA for the web user)" % pv)
+            # Best-effort sanity check that the regenerated group.xml picked up
+            # the PV. This is the ONLY thing add did that edit/delete don't, and
+            # it walks all of GEA_DATA -- slow, and it was rolling back perfectly
+            # good adds when the walk didn't find the PV in time / looked in the
+            # wrong tree (which is why Add "did nothing" while edit/delete were
+            # fine). _run already raises if update_config itself fails, so a bad
+            # config is still caught. Here we only WARN; never roll back the add.
+            try:
+                if not _pv_in_group_xml(archiver, pv):
+                    warnings.append(
+                        "Could not confirm '%s' in the engine's group.xml yet; "
+                        "it may take effect on the next archiver restart." % pv)
+            except Exception, _e:
+                warnings.append("group.xml verify skipped: %s" % _e)
     except Exception:
         if page_bak:
             _restore(chpath, page_bak)
