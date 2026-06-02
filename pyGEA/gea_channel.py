@@ -744,6 +744,7 @@ def _channels_with_added(path, section, pv, fmt, label):
 
     # Find the section's span and insert at its end (before trailing blanks).
     start = None
+    end = len(lines)
     for i, raw in enumerate(lines):
         if raw.strip().startswith(SECTION_MARK):
             title = raw.strip()[len(SECTION_MARK):].strip()
@@ -752,10 +753,21 @@ def _channels_with_added(path, section, pv, fmt, label):
             elif start is not None:
                 end = i
                 break
-    else:
-        end = len(lines)
     if start is None:
         raise ChannelError("Section '%s' not found in page" % section)
+
+    # Reject a duplicate: the PV is already a display line in this section.
+    # (Stops accidental double-adds from a double-click / double-submit.)
+    for raw in lines[start + 1:end]:
+        s = raw.strip()
+        if not s or s.startswith("#") or s.startswith("!"):
+            continue
+        val = raw.split("#", 1)[0]
+        b = val.find("{")
+        if b >= 0:
+            val = val[:b]
+        if val.strip() == pv:
+            raise ChannelError("'%s' is already in section '%s'" % (pv, section))
 
     at = end
     while at - 1 > start and lines[at - 1].strip() == "":
