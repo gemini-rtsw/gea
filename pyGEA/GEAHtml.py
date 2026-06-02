@@ -8897,7 +8897,8 @@ class HTMLDynChanTable(HTMLDynTable):
         self._queryStrPairs=queryStrPairs or {}
         self._useSubTables=useSubTables
         self._autoTitle=autoTitle    #Determines whether to create a titile plot  based on the section/chan name automatically.
-        
+        self._pageFile=dataStr       #Remember the page .channels filename, so per-section edit controls know which page they act on.
+
         # dataStr that comes in is actually the filename of the real data. Replace it with the file's contents.
 
         #General GEAHtml object init stuff.
@@ -8928,9 +8929,66 @@ function updateFixedTimeRange()
 
 updateFixedTimeRange();
 
+// Open the channel editor as an in-page modal (iframe overlay) -- no browser
+// popup, so no URL bar. Called by the per-section [edit] links.
+function geaEditChannels(url)
+{
+    var ov = document.getElementById('geaEditOverlay');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'geaEditOverlay';
+        ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;'
+            + 'background:rgba(0,0,0,0.5);z-index:10000;';
+        var box = document.createElement('div');
+        box.id = 'geaEditBox';
+        box.style.cssText = 'position:absolute;background:#fff;border:1px solid #444;';
+        var bar = document.createElement('div');
+        bar.style.cssText = 'background:#eee;padding:4px 8px;text-align:right;'
+            + 'font-family:sans-serif;border-bottom:1px solid #ccc;';
+        bar.innerHTML = '<a href="#" onclick="geaCloseEdit();return false;" '
+            + 'style="text-decoration:none;font-weight:bold;">close X</a>';
+        var ifr = document.createElement('iframe');
+        ifr.id = 'geaEditFrame';
+        ifr.style.cssText = 'width:100%;border:0;display:block;';
+        box.appendChild(bar); box.appendChild(ifr); ov.appendChild(box);
+        document.body.appendChild(ov);
+    }
+    document.getElementById('geaEditFrame').src = url;
+    ov.style.display = 'block';
+    geaSizeEdit();
+}
+function geaSizeEdit()
+{
+    // Set explicit pixel sizes from the window. Relying on top/bottom percent
+    // insets + an absolutely-positioned iframe doesn't size reliably (esp. in
+    // older browsers / inside iframes), which left the iframe short. Compute it.
+    var box = document.getElementById('geaEditBox');
+    var ifr = document.getElementById('geaEditFrame');
+    if (!box || !ifr) return;
+    var w = window.innerWidth  || document.documentElement.clientWidth  || 1000;
+    var hh = window.innerHeight || document.documentElement.clientHeight || 700;
+    var boxW = Math.floor(w * 0.9), boxH = Math.floor(hh * 0.9);
+    box.style.left   = Math.floor((w - boxW) / 2) + 'px';
+    box.style.top    = Math.floor((hh - boxH) / 2) + 'px';
+    box.style.width  = boxW + 'px';
+    box.style.height = boxH + 'px';
+    ifr.style.height = (boxH - 30) + 'px';   // minus the close bar
+}
+function geaCloseEdit()
+{
+    var ov = document.getElementById('geaEditOverlay');
+    if (ov) {
+        ov.style.display = 'none';
+        // Reload so the page reflects any channels just added/removed.
+        location.reload();
+    }
+}
+if (window.attachEvent) { window.attachEvent('onresize', geaSizeEdit); }
+else if (window.addEventListener) { window.addEventListener('resize', geaSizeEdit, false); }
+
 // -->
 </script>
-                
+
         ''']
         
         footer=['</div>']
@@ -9156,7 +9214,22 @@ updateFixedTimeRange();
             self.parsedDataList.append(util.Holder(queryStrPairs=query, humanName=name, chanOrPat=value.strip()))
         
         #Add the section titile, and make sure it spans all columns.
-        self._table.add_array_after_last_row([sectionName], {'class':secTitleCssClass})   
+        #Append a small per-section "edit" control so a user can add/delete
+        #channels in exactly this section straight from the page.
+        titleHtml=sectionName
+        if sectionName:
+            editUrl='%s/pages/common/editChannelsPage?PAGE=%s&SECTION=%s' % (
+                GEAVars.dispatchScript,
+                urllib.quote(self._pageFile),
+                urllib.quote(sectionName))
+            # Open the editor as an in-page modal (iframe overlay), NOT a browser
+            # popup -- modern browsers force a URL bar on real popups, which we
+            # can't suppress. An iframe overlay has no browser chrome.
+            titleHtml=('%s &nbsp;<a class="editchan" href="#" '
+                       'onclick="geaEditChannels(\'%s\');return false;" '
+                       'title="Add or remove channels in this section">[edit]</a>'
+                       % (sectionName, editUrl))
+        self._table.add_array_after_last_row([titleHtml], {'class':secTitleCssClass})
         self._allColSpanIndex.append(self._table.getmaxRow())
             
         #Create an HTML table with the all the items. 
