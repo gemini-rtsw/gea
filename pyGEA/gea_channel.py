@@ -209,12 +209,38 @@ def add_channel(archiver, pv, period=1, mode="Monitor",
     }
 
 
-def section_channels(channels_path, section):
+def cnfg_meta(archiver):
+    """Map each archived PV to its config metadata: {pv: {period, mode}}.
+    Used to show how a channel is being archived alongside its display info."""
+    meta = {}
+    try:
+        f = open(cnfg_path(archiver))
+    except IOError:
+        return meta
+    try:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#") or s.startswith("!"):
+                continue
+            parts = s.split()
+            meta[parts[0]] = {
+                "period": parts[1] if len(parts) > 1 else "",
+                "mode":   parts[2] if len(parts) > 2 else "",
+            }
+    finally:
+        f.close()
+    return meta
+
+
+def section_channels(channels_path, section, archiver=None):
     """
-    Return the display channels in one section as a list of dicts
-    {pv, label, raw}, for listing with delete buttons. Only real PV lines
+    Return the display channels in one section as a list of dicts:
+      {pv, label, raw, format, period, mode, archived}
+    'format' is the display FORMAT (Plot/Spreadsheet) from the line; period/mode
+    come from the archiver's .cnfg (if `archiver` given). Only real PV lines
     (not markers/comments/blanks) are returned.
     """
+    meta = cnfg_meta(archiver) if archiver else {}
     f = open(channels_path)
     try:
         lines = f.read().split("\n")
@@ -236,11 +262,20 @@ def section_channels(channels_path, section):
         else:
             pv = s
             label = ""
-        # strip an inline {...} query-dict off the displayed pv token
+        # Pull the display FORMAT out of an inline {...} query-dict, then strip
+        # the dict off the displayed pv token.
+        fmt = ""
         b = pv.find("{")
         if b >= 0:
+            dictpart = pv[b:]
+            m = re.search(r"'FORMAT'\s*:\s*'([^']*)'", dictpart)
+            if m:
+                fmt = m.group(1)
             pv = pv[:b].strip()
-        out.append({"pv": pv, "label": label, "raw": raw})
+        m = meta.get(pv, {})
+        out.append({"pv": pv, "label": label, "raw": raw, "format": fmt,
+                    "period": m.get("period", ""), "mode": m.get("mode", ""),
+                    "archived": pv in meta})
     return out
 
 

@@ -103,7 +103,7 @@ class EditChannelsPage(GeaBasePage):
     def _render(self, page, section, archiver):
         try:
             chpath = gea_channel.resolve_page(page)
-            rows = gea_channel.section_channels(chpath, section)
+            rows = gea_channel.section_channels(chpath, section, archiver)
         except gea_channel.ChannelError, e:
             return "<p>Cannot read page: %s</p>" % e
 
@@ -119,16 +119,23 @@ class EditChannelsPage(GeaBasePage):
                  % (archiver or "(none -- display only)"))
 
         h.append('<table border="1" cellpadding="4" cellspacing="0">')
-        h.append("<tr><th>Channel</th><th>Label</th><th></th></tr>")
+        h.append("<tr><th>Channel</th><th>Label</th><th>Display</th>"
+                 "<th>Period</th><th>Mode</th><th>Archived</th><th></th></tr>")
         for row in rows:
             delurl = "%s?%s" % (here, qp(PAGE=page, SECTION=section, DEL=row["pv"]))
+            arch = "yes" if row.get("archived") else "<b>no</b>"
             h.append("<tr><td><code>%s</code></td><td>%s</td>"
+                     "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
                      '<td><a href="%s" onclick="return confirm('
                      "'Delete %s%s?')\">delete</a></td></tr>"
-                     % (row["pv"], row["label"] or "&nbsp;", delurl,
-                        row["pv"], (" and restart "+archiver) if archiver else ""))
+                     % (row["pv"], row["label"] or "&nbsp;",
+                        row.get("format") or "Plot",
+                        row.get("period") or "&nbsp;",
+                        row.get("mode") or "&nbsp;",
+                        arch, delurl, row["pv"],
+                        (" and restart "+archiver) if archiver else ""))
         if not rows:
-            h.append('<tr><td colspan="3"><i>No channels in this section yet.</i></td></tr>')
+            h.append('<tr><td colspan="7"><i>No channels in this section yet.</i></td></tr>')
         h.append("</table>")
 
         # Add form (GET back to this page with ADD=...).
