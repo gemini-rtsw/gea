@@ -543,12 +543,34 @@ class _ChannelSink(object):
 _BISECT_FLOOR_SECONDS = 86400
 
 
+_MAX_ERR_BYTES = 8192   # only need the message on failure, not a whole stream
+
+
 def _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath):
-    """One ArchiveExport invocation. Returns (returncode, combined_output)."""
+    """One ArchiveExport invocation. The data goes to rawPath (-output); ArchiveExport's
+    own stdout/stderr (status + any error) is redirected to a small log file, NOT piped
+    through memory.
+
+    Piping it via subprocess.PIPE + communicate() held the whole stream in a Python
+    string, bloating the long-running worker process; the next channel's fork then
+    failed with '[Errno 12] Cannot allocate memory' (fork must duplicate the parent's
+    memory map). Returns (returncode, short_output_tail)."""
     _safeRemove(rawPath)
+    logPath = rawPath + '.log'
     cmd = _archiveExportCmd(indexPath, matchExpr, startTime, endTime, rawPath)
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    out = proc.communicate()[0]
+    logf = open(logPath, 'w+')
+    try:
+        proc = subprocess.Popen(cmd, stdout=logf, stderr=subprocess.STDOUT)
+        proc.wait()
+        # Read only a bounded tail for the error message (logs are tiny normally).
+        try:
+            logf.seek(max(0, os.path.getsize(logPath) - _MAX_ERR_BYTES))
+            out = logf.read()
+        except (OSError, IOError):
+            out = ''
+    finally:
+        logf.close()
+        _safeRemove(logPath)
     return proc.returncode, out
 
 
