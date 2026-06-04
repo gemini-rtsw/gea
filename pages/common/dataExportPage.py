@@ -42,7 +42,7 @@ from pages.geaBasePage import GeaBasePage
 
 # Bump when the channel-tree structure or build logic changes, so a deploy
 # invalidates any cached channel_tree.<ver>.html instead of serving a stale layout.
-_TREE_CACHE_VERSION = 3
+_TREE_CACHE_VERSION = 4
 
 # Tree top level: menu category -> [(display label, <page>.channels file), ...],
 # mirroring the GEA side menu so the export tree matches what users browse. Pages
@@ -236,19 +236,16 @@ class DataExportPage(GeaBasePage):
         # than one GEA page (e.g. mc:elCurrentPos shows under MCS, GIS, and Telescope),
         # so a global 'seen' set would make it vanish from every page but the first one
         # rendered. Within a single section we still avoid an exact duplicate checkbox.
+        # Build bottom-up so empty groups are dropped: a section with no expandable
+        # channels (e.g. obsolete/unarchived PVs, or an [HTML] block) is omitted, and a
+        # page or category that ends up with no sections is omitted too. This removes the
+        # blank "(unnamed)" / "Obsolete..." / "[HTML]" headers.
         for catName, pages in _MENU_TREE:
-            out.append('<details><summary><b>%s</b></summary>'
-                       '<div style="margin-left:1em;">' % _esc(catName))
+            catParts = []
             for pageLabel, pageFile in pages:
-                sections = self._parsePageChannels(pageFile)
-                if not sections:
-                    continue
-                out.append('<details style="margin-left:1em;"><summary>%s</summary>'
-                           '<div style="margin-left:1em;">' % _esc(pageLabel))
-                for secName, entries in sections:
-                    out.append('<details style="margin-left:1em;"><summary>%s'
-                               '</summary><div style="margin-left:1.5em;">'
-                               % _esc(secName or '(unnamed)'))
+                pageParts = []
+                for secName, entries in self._parsePageChannels(pageFile):
+                    secBoxes = []
                     seen = set()
                     for value, label, isPattern in entries:
                         pvs = GEAExport.expandPattern(value) if isPattern else [value]
@@ -259,13 +256,34 @@ class DataExportPage(GeaBasePage):
                             e = _esc(pv)
                             shown = e if not label else '%s <span style="color:#888;">'\
                                 '(%s)</span>' % (e, _esc(label))
-                            out.append('<label style="display:block;">'
-                                       '<input type="checkbox" class="expchan" '
-                                       'value="%s" onclick="exportSyncChannels()"> '
-                                       '%s</label>' % (e, shown))
-                    out.append('</div></details>')
-                out.append('</div></details>')
-            out.append('</div></details>')
+                            secBoxes.append(
+                                '<label style="display:block;"><input type="checkbox" '
+                                'class="expchan" value="%s" '
+                                'onclick="exportSyncChannels()"> %s</label>'
+                                % (e, shown))
+                    if not secBoxes:
+                        continue   # drop an empty section
+                    # A section may have a blank title; render its boxes with no
+                    # sub-group header in that case.
+                    if secName:
+                        pageParts.append(
+                            '<details style="margin-left:1em;"><summary>%s</summary>'
+                            '<div style="margin-left:1.5em;">%s</div></details>'
+                            % (_esc(secName), '\n'.join(secBoxes)))
+                    else:
+                        pageParts.append('<div style="margin-left:1.5em;">%s</div>'
+                                         % '\n'.join(secBoxes))
+                if not pageParts:
+                    continue   # drop a page with no non-empty sections
+                catParts.append(
+                    '<details style="margin-left:1em;"><summary>%s</summary>'
+                    '<div style="margin-left:1em;">%s</div></details>'
+                    % (_esc(pageLabel), '\n'.join(pageParts)))
+            if not catParts:
+                continue   # drop a category with no non-empty pages
+            out.append('<details><summary><b>%s</b></summary>'
+                       '<div style="margin-left:1em;">%s</div></details>'
+                       % (_esc(catName), '\n'.join(catParts)))
         out.append('</div></td></tr></table></div>')
         out.append(self._channelSyncJS())
         return '\n'.join(out)
@@ -320,7 +338,8 @@ if(window.addEventListener){ window.addEventListener('load', exportSyncChannels,
 
         site = GEAVars.site
         sections = []
-        cur = None        # (name, entries)
+        cur = None          # current (name, entries), or None before the first section
+        skipping = False    # True while inside an [HTML] section (raw markup, no PVs)
         for raw in text.split('\n'):
             line = raw.rstrip()
             if line.strip() == '':
@@ -337,9 +356,19 @@ if(window.addEventListener){ window.addEventListener('load', exportSyncChannels,
                 continue
 
             if line.startswith('#[SECTION]'):
-                cur = (line[len('#[SECTION]'):].strip(), [])
+                title = line[len('#[SECTION]'):].strip()
+                # A [HTML] section is a block of raw markup (diagrams, notes), NOT
+                # channels -- the real page parser dumps it verbatim and moves on. Skip
+                # the whole section so its HTML lines aren't mis-parsed as channels.
+                if '[HTML]' in title:
+                    skipping = True
+                    continue
+                skipping = False
+                cur = (title, [])     # title may be '' -> rendered with no sub-group
                 sections.append(cur)
                 continue
+            if skipping:
+                continue   # inside an [HTML] section
             if line.startswith('#[CELL]'):
                 continue   # a cell is just a visual label; flatten its channels in
             if line.startswith('#'):
