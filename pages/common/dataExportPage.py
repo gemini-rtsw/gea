@@ -40,6 +40,10 @@ from GEATime import Time
 from pages.geaBasePage import GeaBasePage
 
 
+# Bump when the channel-tree structure or build logic changes, so a deploy
+# invalidates any cached channel_tree.<ver>.html instead of serving a stale layout.
+_TREE_CACHE_VERSION = 2
+
 # Tree top level: menu category -> [(display label, <page>.channels file), ...],
 # mirroring the GEA side menu so the export tree matches what users browse. Pages
 # that don't exist (or are empty) at a given site are simply skipped at render time.
@@ -170,6 +174,20 @@ class DataExportPage(GeaBasePage):
             '<input type="hidden" name="ACTION" value="export">']))
 
     def _channelTreeHTML(self):
+        """Cached wrapper around _buildChannelTreeHTML. Building the tree expands every
+        pattern in 48 page files against ~4700 PVs (~24M regex ops) and emits thousands
+        of checkboxes -- far too slow to do on every CGI request. So we render it once,
+        cache the HTML to a file, and serve that until it ages out (lazy rebuild; no
+        cron needed). genTime gives the cache its 'now' for the age check.
+
+        The cache filename carries a version tag: bump _TREE_CACHE_VERSION whenever the
+        tree's structure/build logic changes, so a deploy automatically invalidates the
+        old cache instead of serving a stale layout for up to a day."""
+        return GEAExport.cachedHTML('channel_tree.%s.html' % _TREE_CACHE_VERSION,
+                                    self._buildChannelTreeHTML,
+                                    now=self.genTime.seconds)
+
+    def _buildChannelTreeHTML(self):
         """A collapsible checkbox tree that mirrors the GEA page grouping: menu category
         -> page -> Section -> Cell -> channels (with the human labels from the page
         files). Built from the same <page>.channels files the system/engineering/etc.
@@ -185,7 +203,10 @@ class DataExportPage(GeaBasePage):
                '<div style="max-height:380px;overflow:auto;border:1px solid #ccc;'
                'padding:6px;text-align:left;">']
 
-        seen_global = set()   # avoid the same PV appearing as a duplicate checkbox
+        # Dedup is PER SECTION, not global: the same PV legitimately appears on more
+        # than one GEA page (e.g. mc:elCurrentPos shows under MCS, GIS, and Telescope),
+        # so a global 'seen' set would make it vanish from every page but the first one
+        # rendered. Within a single section we still avoid an exact duplicate checkbox.
         for catName, pages in _MENU_TREE:
             out.append('<details><summary><b>%s</b></summary>'
                        '<div style="margin-left:1em;">' % _esc(catName))
@@ -199,12 +220,13 @@ class DataExportPage(GeaBasePage):
                     out.append('<details style="margin-left:1em;"><summary>%s'
                                '</summary><div style="margin-left:1.5em;">'
                                % _esc(secName or '(unnamed)'))
+                    seen = set()
                     for value, label, isPattern in entries:
                         pvs = GEAExport.expandPattern(value) if isPattern else [value]
                         for pv in pvs:
-                            if pv in seen_global:
+                            if pv in seen:
                                 continue
-                            seen_global.add(pv)
+                            seen.add(pv)
                             e = _esc(pv)
                             shown = e if not label else '%s <span style="color:#888;">'\
                                 '(%s)</span>' % (e, _esc(label))

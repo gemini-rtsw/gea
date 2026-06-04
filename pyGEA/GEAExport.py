@@ -58,6 +58,75 @@ def exportsDir():
     return d
 
 
+# How long a cached artifact (e.g. the channel tree HTML) is served before a lazy
+# rebuild. Channels change rarely, so a day is plenty; the rebuild is a single slow
+# request, every other load reads the cached file.
+CACHE_MAX_AGE = 24 * 3600
+
+
+def cachedHTML(name, builder, maxAge=CACHE_MAX_AGE, now=None):
+    """Return cached HTML from exportsDir()/<name>, rebuilding via builder() only when
+    the file is missing or older than maxAge. Lets an expensive-to-render fragment (the
+    channel tree is ~24M regex ops over the page files) be built once and then served
+    instantly on subsequent page loads -- important under CGI, where nothing persists
+    in memory between requests.
+
+    `now` is epoch seconds (pass Time().seconds from the caller, since GEA's sandbox
+    forbids time-of-day calls in some contexts); defaults to the file's own clock via
+    os.path.getmtime comparison only.
+
+    The rebuild is written atomically (temp + rename) so a concurrent reader never sees
+    a half-written file. If a rebuild fails but a stale cache exists, the stale copy is
+    returned rather than erroring."""
+    path = os.path.join(exportsDir(), name)
+
+    fresh = False
+    try:
+        age_ok = True
+        if now is not None:
+            age_ok = (now - os.path.getmtime(path)) < maxAge
+        if os.path.isfile(path) and age_ok:
+            fresh = True
+    except OSError:
+        fresh = False
+
+    if fresh:
+        try:
+            f = open(path, 'r')
+            try:
+                return f.read()
+            finally:
+                f.close()
+        except IOError:
+            pass   # fall through to rebuild
+
+    # Rebuild.
+    try:
+        html = builder()
+    except Exception:
+        # Builder failed: serve a stale cache if we have one, else re-raise.
+        if os.path.isfile(path):
+            f = open(path, 'r')
+            try:
+                return f.read()
+            finally:
+                f.close()
+        raise
+
+    tmp = path + '.tmp'
+    try:
+        f = open(tmp, 'w')
+        try:
+            f.write(html)
+        finally:
+            f.close()
+        os.rename(tmp, path)
+    except OSError:
+        _safeRemove(tmp)   # best effort; still return freshly built html below
+
+    return html
+
+
 def _ensureDir(d):
     try:
         os.makedirs(d, 0775)
@@ -273,16 +342,37 @@ def allArchivedPVs():
     return _allArchivedPVs
 
 
+# Characters that make a page-file entry an actual regex rather than a plain PV name.
+_REGEX_META = re.compile(r'[()|*+?\[\]\\^$]')
+
+
 def expandPattern(pattern):
-    """Concrete archived PVs matching an ArchiveExport-style regex `pattern`, in sorted
-    order. Used to turn a GEA page file's pattern line (e.g.
-    'm1:MCB001:M1.(Encoder|MotDmd)$') into individual checkboxes. Anchored like the
-    data server's name matching (search from the start)."""
+    """Concrete archived PVs matching a GEA page-file entry, sorted.
+
+    A plain PV name (no regex metacharacters) matches EXACTLY -- otherwise an entry like
+    'mc:elCurrentPos' would also grab 'mc:elCurrentPosEC' (re.match is unanchored at the
+    end), which is how channels were going missing/duplicated. An entry that really is a
+    regex (e.g. 'm1:MCB001:M1.(Encoder|MotDmd)$') is matched as one, anchored at the
+    start and end the way the data server resolves names."""
+    if not _REGEX_META.search(pattern):
+        # Literal name: exact membership test, no false prefix matches.
+        return [pattern] if pattern in _allArchivedPVsSet() else []
     try:
-        rx = re.compile(pattern)
+        rx = re.compile(pattern if pattern.endswith('$') else pattern + '$')
     except re.error:
         return []
     return [pv for pv in allArchivedPVs() if rx.match(pv)]
+
+
+_allArchivedPVsSetCache = None
+
+
+def _allArchivedPVsSet():
+    """Set form of allArchivedPVs() for O(1) literal membership tests."""
+    global _allArchivedPVsSetCache
+    if _allArchivedPVsSetCache is None:
+        _allArchivedPVsSetCache = set(allArchivedPVs())
+    return _allArchivedPVsSetCache
 
 
 def _archiveExportCmd(indexPath, matchExpr, startTime, endTime, outFile):
