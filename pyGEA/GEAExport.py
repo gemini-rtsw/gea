@@ -247,6 +247,41 @@ def masterIndexPath():
         "Could not find the master archive index from the data server.\n")
 
 
+def _nameFromMatch(match):
+    """The data server's archiver.names() returns each channel as a struct; the PV
+    name is the 'name' field. Pull it by key, falling back to the positional access
+    the older code used (match.items()[4][1]) if the struct shape differs."""
+    try:
+        return match['name']
+    except (KeyError, TypeError):
+        return match.items()[4][1]
+
+
+def archivedChannelTree():
+    """List every archived channel, grouped by archiver, straight from the live data
+    server -- the SAME backend the GEA system pages and the plotter resolve against, so
+    this matches what those pages show. Returns an ordered list of
+    (archiverName, [channel, ...]).
+
+    NOTE we deliberately do NOT use plotterPage.channels here: that file is a
+    hand-maintained 'favorites' list (~500 of ~4500 archived PVs) that nothing keeps in
+    sync, which is why the first cut of the tree looked wrong."""
+    groups = []
+    for a in dataServer.archiver.archives():
+        name = a.get('name', '')
+        if name == '':
+            continue   # the master/combined index, not a real archiver
+        try:
+            matches = dataServer.archiver.names(a['key'], '')   # '' / '.*' = all PVs
+        except Exception:
+            matches = []
+        channels = sorted(_nameFromMatch(m) for m in matches)
+        if channels:
+            groups.append((name, channels))
+    groups.sort()
+    return groups
+
+
 def _archiveExportCmd(indexPath, matchExpr, startTime, endTime, outFile):
     """Build the ArchiveExport command. Mirrors EpicsDataSpreadsheetExporter.export()
     but with no -interpolate/-fill -- we want every raw sample."""

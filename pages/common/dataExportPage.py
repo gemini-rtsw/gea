@@ -33,14 +33,11 @@ import subprocess
 import GEAVars
 import GEAExport
 from GEAExport import RUNNING, DONE, ERROR
-from GEAHtml import HTMLFormCont, HTMLTimeSelectorSimple, HTMLDynChanSelector, \
+from GEAHtml import HTMLFormCont, HTMLTimeSelectorSimple, \
     HTMLTextBox, HTMLCont, HtmlHelper
 from GEARequest import RequestCollection, Request
 from GEATime import Time
 from pages.geaBasePage import GeaBasePage
-
-# Reuse the plotter's channel hierarchy so the same systems/channels are selectable.
-gChanHier = "common/plotterPage.channels"
 
 
 def _esc(s):
@@ -112,39 +109,39 @@ class DataExportPage(GeaBasePage):
 
     def _channelTreeHTML(self):
         """A collapsible checkbox tree of already-archived channels, built from the
-        same hierarchy file the plotter uses. Each leaf channel is a plain HTML
-        checkbox (name=EXPORTCHAN, value=<channel>); checking it includes that channel
-        in the export. No JavaScript -- the browser submits the checked values
-        natively, which is why this works where the old add-button flow did not.
+        LIVE archiver list -- grouped by archiver, from the data server (the same
+        backend the GEA system pages resolve against), so it matches what those pages
+        show. Each leaf channel is a plain HTML checkbox (name=EXPORTCHAN,
+        value=<channel>); checking it includes that channel in the export. No
+        JavaScript -- the browser submits the checked values natively, which is why
+        this works where the old add-button flow did not.
 
-        We reuse HTMLDynChanSelector only as a PARSER (it builds .dataList: system ->
-        category -> leaf channel, each leaf carrying its archiver) and render our own
-        markup."""
+        NOT built from plotterPage.channels: that is a hand-maintained ~500-channel
+        'favorites' file that nothing keeps in sync, so it did not match reality."""
         try:
-            tree = HTMLDynChanSelector(chanHierFile=gChanHier).dataList
+            groups = GEAExport.archivedChannelTree()
         except Exception, e:
-            return ('<div class="widgetChanSelLabel">Channel list unavailable: %s'
-                    '</div>' % _esc(str(e)))
+            return ('<div class="widgetChanSelLabel">Channel list unavailable '
+                    '(data server): %s</div>' % _esc(str(e)))
+
+        if not groups:
+            return ('<div class="widgetChanSelLabel">No archived channels reported by '
+                    'the data server.</div>')
 
         out = ['<div align="center"><table width="700"><tr><td>',
-               '<b>Archived channels</b> &mdash; tick to include in the export:',
-               '<div style="max-height:320px;overflow:auto;border:1px solid #ccc;'
+               '<b>Archived channels</b> &mdash; tick to include in the export '
+               '(grouped by archiver):',
+               '<div style="max-height:360px;overflow:auto;border:1px solid #ccc;'
                'padding:6px;text-align:left;">']
-        for system in tree:
-            out.append('<details><summary><b>%s</b></summary>'
-                       % _esc(system.name))
-            for cat in system.getTrees():
-                out.append('<details style="margin-left:1em;">'
-                           '<summary>%s</summary><div style="margin-left:1.5em;">'
-                           % _esc(cat.name))
-                for leaf in cat.getTrees():
-                    ch = _esc(leaf.name)
-                    # value carries the channel; data-arch lets us collect the
-                    # archiver server-side from the submitted names if needed.
-                    out.append('<label style="display:block;"><input type="checkbox" '
-                               'name="EXPORTCHAN" value="%s"> %s</label>' % (ch, ch))
-                out.append('</div></details>')
-            out.append('</details>')
+        for archiver, channels in groups:
+            out.append('<details><summary><b>%s</b> (%d)</summary>'
+                       '<div style="margin-left:1.5em;">'
+                       % (_esc(archiver), len(channels)))
+            for ch in channels:
+                e = _esc(ch)
+                out.append('<label style="display:block;"><input type="checkbox" '
+                           'name="EXPORTCHAN" value="%s"> %s</label>' % (e, e))
+            out.append('</div></details>')
         out.append('</div></td></tr></table></div>')
         return '\n'.join(out)
 
