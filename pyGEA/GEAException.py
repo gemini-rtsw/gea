@@ -13,7 +13,11 @@ class PlotException(GEAException):
     
 class DataHandlerException(GEAException):
     pass
-    
+
+class DataExportException(GEAException):
+    """Raised by the long-term data export path (csv export / export jobs)."""
+    pass
+
 class RequestException(GEAException):
     pass
 

@@ -31,9 +31,10 @@ class MenuItem(object):
         
 class menusMK:
     dailyMenu=[MenuItem('Daily/Reports', None, 0),
-               MenuItem('Engineering', dispatchScript+'/pages/engineeringPage?', 0), 
-               MenuItem('System Monitor', dispatchScript+'/pages/sysMonitorPage?', 0),                        
-               MenuItem('Log Watcher', dispatchScript+'/pages/logWatcherPage?', 0),                        
+               MenuItem('Engineering', dispatchScript+'/pages/engineeringPage?', 0),
+               MenuItem('System Monitor', dispatchScript+'/pages/sysMonitorPage?', 0),
+               MenuItem('Data Export', dispatchScript+'/pages/common/dataExportPage?', 0),
+               MenuItem('Log Watcher', dispatchScript+'/pages/logWatcherPage?', 0),
                MenuItem('Weekly Plan', 'http://project.gemini.edu:2010/Plan/Overview.aspx', 0),      
                MenuItem('Fault Reports', dispatchScript+'/pages/remedy/frsPage?', 0),
                MenuItem('Ticket Search', dispatchScript+'/pages/remedy/frsPage?FORMAT=ticket', 1),
@@ -109,8 +110,9 @@ class menusMK:
 class menusCP:
     dailyMenu=[MenuItem('Daily/Reports', None, 0),
                MenuItem('Engineering', dispatchScript+'/pages/engineeringPage?', 0), 
-               MenuItem('Sys/Inst Monitor', dispatchScript+'/pages/sysMonitorPage?', 0),  
-               MenuItem('Weekly Plan', 'http://project.gemini.edu:2010/Plan/Overview.aspx', 0),      
+               MenuItem('Sys/Inst Monitor', dispatchScript+'/pages/sysMonitorPage?', 0),
+               MenuItem('Data Export', dispatchScript+'/pages/common/dataExportPage?', 0),
+               MenuItem('Weekly Plan', 'http://project.gemini.edu:2010/Plan/Overview.aspx', 0),
                MenuItem('Fault Reports', dispatchScript+'/pages/remedy/frsPage?', 0),
                MenuItem('Ticket Search', dispatchScript+'/pages/remedy/frsPage?FORMAT=ticket', 1),
                MenuItem('User Search', dispatchScript+'/pages/remedy/frsPage?FORMAT=user', 1),

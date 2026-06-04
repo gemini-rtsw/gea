@@ -81,8 +81,9 @@ class path:
         wwwScripts=pathJoin(wwwMedia, 'scripts/')
 
         wwwData='/wwwdata/'	# This is a symlink from DocumentRoot to $GEA_DATA/geadata for generated documents.
-        m1SurfacePlots=pathJoin(wwwData, 'm1SurfacePlots')    #Where the surface plots should go into 
+        m1SurfacePlots=pathJoin(wwwData, 'm1SurfacePlots')    #Where the surface plots should go into
         daily=pathJoin(wwwData, 'daily')
+        exports=pathJoin(wwwData, 'exports/')   #Long-term data export downloads (dataExportPage).
 
 #        niriVacFileNameDict={'MK':pathJoin(wwwData ,'niriData/niriVac.txt')}
 
@@ -110,8 +111,9 @@ class path:
         wwwScripts=pathJoin(wwwMedia, 'scripts/')
         
         bin=pathJoin(geaRoot, 'bin/')
-        m1SurfacePlots=pathJoin(wwwData, 'm1SurfacePlots/')  #Where the surface plots should go into 
+        m1SurfacePlots=pathJoin(wwwData, 'm1SurfacePlots/')  #Where the surface plots should go into
         daily=pathJoin(wwwData, 'daily/')
+        exports=pathJoin(wwwData, 'exports/')   #Long-term data export downloads (dataExportPage / gea_export_worker).
     
         niriVacFileNameDict={'MK':pathJoin(wwwData ,'niriData/niriVac.txt')}
         
@@ -158,7 +160,13 @@ class dataEx:
     FILL=False               
 
     INTERPOLATE=0          #Only used when creating spreadsheets. A value of 0 implies no interpalation is done.
-    
+
+    #Long-term raw CSV export (dataExportPage / gea_export_worker).
+    #Requests at or below this size run inline in the web request; larger ones are
+    #handed off to a detached worker that writes a status file the page polls.
+    #"Size" is approximated as (range in seconds) * (number of channels).
+    exportInlineMaxChannelSeconds=7*86400   #~one channel-week runs inline; bigger goes async.
+
     #Used when creating meta archivers. Controls how many days should be added to the time range over which extracting the data. 
     #The days are added both at the beginning and at the end.
     metaArchDayOffset=20     
