@@ -387,22 +387,53 @@ class DataExportPage(GeaBasePage):
             self.html.doc.append(widget)
             return
 
-        try:
-            if action == "delete" and p.get("JOBID", ""):
-                GEAExport.deleteJob(p["JOBID"])
-                self._note = "Deleted export %s." % p["JOBID"]
-            elif action == "export":
-                self._note = self._doExport(p, stream)
-        except Exception, e:
-            self._note = "Error: %s" % e
+        if action in ("export", "delete"):
+            # State-changing actions: do the work, then bounce the browser to the clean
+            # page URL (Post/Redirect/Get). Otherwise the browser sits on the
+            # ACTION=export POST result, and a refresh re-submits it -> a duplicate
+            # export every refresh. location.replace so the action URL isn't kept in
+            # history (a back-button press won't re-fire it either).
+            try:
+                if action == "delete" and p.get("JOBID", ""):
+                    GEAExport.deleteJob(p["JOBID"])
+                elif action == "export":
+                    # _doExport returns a non-empty string on a validation problem
+                    # (e.g. no channels picked); show it instead of redirecting so the
+                    # user sees what to fix.
+                    err = self._doExport(p, stream)
+                    if err:
+                        self._note = err
+                        self._renderResults(request)
+                        return
+            except Exception, e:
+                # Show the error rather than redirecting, so it isn't lost.
+                self._note = "Error: %s" % e
+                self._renderResults(request)
+                return
+            self._renderRedirect()
+            return
 
         self._renderResults(request)
+
+    def _renderRedirect(self):
+        """Bounce to the clean page URL after a state-changing action (PRG). Rendered
+        as a tiny standalone page: run() has already sent the text/html header, so we
+        can't issue an HTTP 3xx -- a client-side location.replace achieves the same
+        thing (and drops the action URL from history so refresh/back won't re-fire)."""
+        self.standAlone = True
+        url = self.calledName
+        self.html.doc.append(HTMLCont(body=[
+            '<html><head><meta http-equiv="refresh" content="0; url=%s">'
+            '<script>window.location.replace(%s);</script></head>'
+            '<body>Working&hellip; <a href="%s">continue</a></body></html>'
+            % (url, _jsStr(url), url)]))
 
     # ---- actions -----------------------------------------------------------
 
     def _doExport(self, p, stream):
-        """Validate the request, then run inline (small) or spawn the worker (large).
-        Returns the note to show at the top of the page."""
+        """Validate the request and spawn the background export. Returns an error
+        message string on a validation problem, or None on success (the caller then
+        redirects to the clean page, where the new job shows as 'building...')."""
         startTime = Time().fromStartTimeDict(p, allCaps=True, monthAsWord="Auto")
         endTime = Time().fromEndTimeDict(p, allCaps=True, monthAsWord="Auto")
 
@@ -442,9 +473,7 @@ class DataExportPage(GeaBasePage):
         # worker and return at once; the poller shows progress and the link when ready.
         GEAExport.writeStatus(jobid, RUNNING, "Queued...", meta)
         self._spawnWorker(jobid, archivers, channels, patterns, startTime, endTime)
-        return ("Export started in the background (job %s). It will appear below "
-                "(with progress) and offer a download link when ready -- you can "
-                "leave and come back." % jobid)
+        return None   # success -> caller redirects to the clean page
 
     def _spawnWorker(self, jobid, archivers, channels, patterns, startTime, endTime):
         """Launch gea_export_worker fully detached so it outlives this CGI request.
