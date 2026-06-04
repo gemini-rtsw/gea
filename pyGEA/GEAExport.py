@@ -395,15 +395,23 @@ def _archiveExportCmd(indexPath, matchExpr, startTime, endTime, outFile):
 _TS_RE = re.compile(r'^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}')
 
 
+def _cleanChannelName(name):
+    """ArchiveExport titles a value column with the PV name plus a units/array
+    annotation, e.g. 'mc:azCurrentPos [units]'. Strip a trailing ' [...]' so the CSV
+    channel column is the bare PV name."""
+    return re.sub(r'\s*\[[^\]]*\]\s*$', '', name).strip()
+
+
 def _parseHeaderChannels(line):
     """From an ArchiveExport header line (tab-separated, first column 'Time'), return
     the channel name for each value column, in order. Returns None if this isn't a
-    header line. ArchiveExport repeats the channel name as the column title."""
+    header line. ArchiveExport repeats the channel name (plus a ' [units]' suffix we
+    strip) as the column title."""
     cells = line.lstrip('#').strip('\n').split('\t')
     cells = [c.strip() for c in cells if c.strip() != '']
     if not cells or cells[0].lower() != 'time':
         return None
-    return cells[1:]
+    return [_cleanChannelName(c) for c in cells[1:]]
 
 
 def _parseArchiveExportFile(rawPath, fallbackChannel, writer, seen=None):
