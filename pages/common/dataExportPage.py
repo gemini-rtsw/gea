@@ -381,9 +381,7 @@ if(window.addEventListener){ window.addEventListener('load', exportSyncChannels,
             '<div align="center"><table width="700">'
             '<tr><td width="13%%" class="widgetChanSelLabel">Channels:</td>'
             '<td><input type="text" id="exportChannels" name="CHANNELS" size="70" '
-            'maxlength="100000" value="%s"> '
-            '<span style="color:#888;">(ticked tree channels appear here; you can '
-            'also edit)</span></td></tr>'
+            'maxlength="100000" value="%s"></td></tr>'
             '</table></div>'
         ) % cur
 
