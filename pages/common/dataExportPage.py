@@ -431,17 +431,16 @@ class DataExportPage(GeaBasePage):
                 'start': startTime.string16, 'end': endTime.string16,
                 'created': Time().string16}
 
-        if GEAExport.shouldRunInline(startTime, endTime, channels, patterns):
-            GEAExport.runExport(jobid, archivers, channels, patterns,
-                                startTime, endTime, meta)
-            return "Export ready below."
-
-        # Large: record a RUNNING status now (so it shows up immediately), then spawn
-        # the detached worker to actually build it.
+        # ALWAYS run in the background. Running even a "small" export inline blocks the
+        # web request -- and ArchiveExport can take minutes (or many calls, when the
+        # corrupt-file bisection kicks in), which made "Download" hang the browser.
+        # Record RUNNING now so the job appears immediately, then spawn the detached
+        # worker and return at once; the poller shows progress and the link when ready.
         GEAExport.writeStatus(jobid, RUNNING, "Queued...", meta)
         self._spawnWorker(jobid, archivers, channels, patterns, startTime, endTime)
-        return ("Export started in the background (job %s). It will appear as 'Done' "
-                "below when ready -- you can leave and come back." % jobid)
+        return ("Export started in the background (job %s). It will appear below "
+                "(with progress) and offer a download link when ready -- you can "
+                "leave and come back." % jobid)
 
     def _spawnWorker(self, jobid, archivers, channels, patterns, startTime, endTime):
         """Launch gea_export_worker fully detached so it outlives this CGI request.
@@ -468,10 +467,9 @@ class DataExportPage(GeaBasePage):
     # ---- rendering ---------------------------------------------------------
 
     def _renderResults(self, request):
-        """Top-of-page note + the recent-exports table. Restores the form fields the
-        user submitted so a re-submit is easy. If any job is still building, emits a
-        meta-refresh so the page reloads itself (and the download link appears) when
-        the worker finishes -- no JS, no manual refresh, and it stops once all done."""
+        """Top-of-page note + the recent-exports table (wrapped in #exportStatus).
+        Restores the submitted time range. If any job is building, appends the poll JS
+        that refreshes only that table in place until the job finishes."""
         if self._note:
             # The note can carry exception text derived from user input, so escape HTML
             # metacharacters. _esc also neutralizes '%', which matters because the note
