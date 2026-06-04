@@ -580,6 +580,13 @@ def _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath):
 _CHUNK_SECONDS = 30 * 86400   # ~one month per window
 
 
+def _windowCount(startTime, endTime):
+    """How many time windows a [start, end] range splits into (matches the loop in
+    _exportItemChunked). Used to size whole-job progress."""
+    span = int(endTime.seconds) - int(startTime.seconds)
+    return max(1, (span + _CHUNK_SECONDS - 1) // _CHUNK_SECONDS)
+
+
 def _exportItemChunked(indexPath, item, isPattern, startTime, endTime, workDir, n, sink,
                        progress=None):
     """Export one channel/pattern over [start, end] in _CHUNK_SECONDS windows, calling
@@ -681,6 +688,14 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
     items = [(c, False) for c in channels] + [(p, True) for p in patterns]
     total = len(items)
     started = Time().seconds
+
+    # Whole-job progress is measured in TIME WINDOWS (each channel's range / chunk),
+    # since windows are ~equal work. Counting completed windows across all channels
+    # gives a steadily-improving percentage + ETA, even mid-channel.
+    winsPerChannel = _windowCount(startTime, endTime)
+    totalWindows = max(1, total * winsPerChannel)
+    doneWindows = [0]   # list so the per-window closure can mutate it
+
     writeStatus(jobid, RUNNING, 'Exporting %d channel(s)...' % total, meta)
 
     indexPath = masterIndexPath()
@@ -692,23 +707,27 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
     sink = _ChannelSink(workDir)
     notes = []   # human-readable per-item problems -> notes.txt in the zip
 
+    def _etaSuffix():
+        d = doneWindows[0]
+        if d <= 0:
+            return ''
+        elapsed = Time().seconds - started
+        eta = (elapsed / float(d)) * (totalWindows - d)
+        pct = int(100 * d / totalWindows)
+        return '  [%d%%, about %s left]' % (pct, _humanDuration(eta))
+
     try:
         for n, (item, isPattern) in enumerate(items):
-            # Per-channel progress (the page polls this). ETA is a plain average:
-            # elapsed-so-far / done * remaining -- honest, not a fake countdown.
-            # Only shown after the first channel, so there's a baseline.
-            prefix = 'Exporting channel %d of %d: %s' % (n + 1, total, item)
-            if n > 0:
-                elapsed = Time().seconds - started
-                eta = (elapsed / n) * (total - n)
-                prefix += ' (~%s left over channels)' % _humanDuration(eta)
-            writeStatus(jobid, RUNNING, prefix + '...', meta)
+            prefix = 'Channel %d of %d (%s)' % (n + 1, total, item)
+            writeStatus(jobid, RUNNING, prefix + '...' + _etaSuffix(), meta)
 
-            # Live progress WITHIN this channel: status updates after each time window.
+            # Live progress WITHIN this channel: status updates after each time window,
+            # and the whole-job %/ETA advances with every window.
             def _progress(done, nwin, partRows, _prefix=prefix):
+                doneWindows[0] += 1
                 writeStatus(jobid, RUNNING,
-                            '%s -- part %d of %d (%d rows so far)'
-                            % (_prefix, done, nwin, partRows), meta)
+                            '%s -- part %d of %d (%d rows)%s'
+                            % (_prefix, done, nwin, partRows, _etaSuffix()), meta)
 
             rows, errs = _exportItemChunked(indexPath, item, isPattern,
                                             startTime, endTime, workDir, n, sink,
