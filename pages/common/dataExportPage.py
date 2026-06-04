@@ -42,7 +42,7 @@ from pages.geaBasePage import GeaBasePage
 
 # Bump when the channel-tree structure or build logic changes, so a deploy
 # invalidates any cached channel_tree.<ver>.html instead of serving a stale layout.
-_TREE_CACHE_VERSION = 5
+_TREE_CACHE_VERSION = 6
 
 # Tree top level: menu category -> [(display label, <page>.channels file), ...],
 # mirroring the GEA side menu so the export tree matches what users browse. Pages
@@ -228,9 +228,13 @@ class DataExportPage(GeaBasePage):
         browser submits the checked values natively, no JS."""
         out = ['<div align="center"><table width="700"><tr><td>',
                '<b>Archived channels</b> &mdash; tick to include in the export '
-               '(grouped as on the GEA pages):',
-               '<div style="max-height:380px;overflow:auto;border:1px solid #ccc;'
-               'padding:6px;text-align:left;">']
+               '(grouped as on the GEA pages):<br>',
+               'Filter: <input type="text" id="expFilter" size="30" '
+               'onkeyup="exportFilterTree()" '
+               'placeholder="type to filter, e.g. wfs"> '
+               '<span id="expFilterCount" style="color:#888;"></span>',
+               '<div id="expTree" style="max-height:380px;overflow:auto;'
+               'border:1px solid #ccc;padding:6px;text-align:left;">']
 
         # Dedup is PER SECTION, not global: the same PV legitimately appears on more
         # than one GEA page (e.g. mc:elCurrentPos shows under MCS, GIS, and Telescope),
@@ -256,11 +260,15 @@ class DataExportPage(GeaBasePage):
                             e = _esc(pv)
                             shown = e if not label else '%s <span style="color:#888;">'\
                                 '(%s)</span>' % (e, _esc(label))
+                            # data-f: lowercased "pv label" the filter matches against,
+                            # so the JS needn't parse innerHTML.
+                            ftext = _esc(('%s %s' % (pv, label)).lower())
                             secBoxes.append(
-                                '<label style="display:block;"><input type="checkbox" '
+                                '<label class="exprow" data-f="%s" '
+                                'style="display:block;"><input type="checkbox" '
                                 'class="expchan" value="%s" '
                                 'onclick="exportSyncChannels()"> %s</label>'
-                                % (e, shown))
+                                % (ftext, e, shown))
                     if not secBoxes:
                         continue   # drop an empty section
                     # Every section gets its own collapsible header so channels never
@@ -284,7 +292,45 @@ class DataExportPage(GeaBasePage):
                        % (_esc(catName), '\n'.join(catParts)))
         out.append('</div></td></tr></table></div>')
         out.append(self._channelSyncJS())
+        out.append(self._channelFilterJS())
         return '\n'.join(out)
+
+    def _channelFilterJS(self):
+        """Client-side live filter for the tree. Typing in #expFilter shows only the
+        channel rows whose 'pv label' (data-f) contains the query, hides the rest, and
+        auto-opens the groups that contain a match while hiding empty ones. View-only:
+        it never changes what's checked (selection lives in the CHANNELS field), so a
+        checked-but-filtered-out channel still exports. Clearing the box restores the
+        full collapsed tree."""
+        return '''<script language="JavaScript">
+function exportFilterTree(){
+  var q=document.getElementById('expFilter');
+  if(!q) return;
+  var term=q.value.toLowerCase().replace(/^\\s+|\\s+$/g,'');
+  var rows=document.getElementsByClassName('exprow');
+  var shown=0;
+  for(var i=0;i<rows.length;i++){
+    var hit=(term=='') || (rows[i].getAttribute('data-f').indexOf(term)>=0);
+    rows[i].style.display = hit ? 'block' : 'none';
+    if(hit && term!='') shown++;
+  }
+  // Show/hide each <details> group by whether it contains a visible row, and open
+  // matching groups while filtering. Walk inner-to-outer so parents see children.
+  var groups=document.getElementById('expTree').getElementsByTagName('details');
+  var arr=[]; for(var k=0;k<groups.length;k++) arr.push(groups[k]);
+  for(var g=arr.length-1; g>=0; g--){
+    var d=arr[g], vis=false, r=d.getElementsByClassName('exprow');
+    for(var m=0;m<r.length;m++){ if(r[m].style.display!='none'){vis=true;break;} }
+    // A group with a visible nested group also counts as visible.
+    if(!vis){ var sub=d.getElementsByTagName('details');
+      for(var s=0;s<sub.length;s++){ if(sub[s].style.display!='none'){vis=true;break;} } }
+    d.style.display = vis ? 'block' : 'none';
+    if(term!='') d.open = vis; else d.open = false;
+  }
+  var c=document.getElementById('expFilterCount');
+  if(c) c.innerHTML = (term=='') ? '' : (shown+' match'+(shown==1?'':'es'));
+}
+</script>'''
 
     def _channelSyncJS(self):
         """JS that keeps the 'Channels:' field in sync with the tree checkboxes. On any
