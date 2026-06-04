@@ -154,11 +154,12 @@ class DataExportPage(GeaBasePage):
 
         # Intro.
         html.intro = HTMLTextBox(vars={'text':
-            "Download raw engineering data as a gzipped CSV (long format: one row per "
-            "channel sample -- channel,timestamp,value,status). Every archived sample "
-            "in the range is included; no decimation or interpolation is applied.\n"
-            "Small requests download right away; large ones run in the background and "
-            "appear in 'Recent exports' below when ready."})
+            "Download raw engineering data as a ZIP of per-channel CSV files (one file "
+            "per channel, columns: timestamp,value; timestamps are full ISO date+time). "
+            "Every archived sample in the range is included; no decimation or "
+            "interpolation is applied.\n"
+            "Exports run in the background and appear in 'Recent exports' below, with "
+            "progress, offering a download link when ready."})
         html.doc.append(html.intro)
 
         # Export form. HTMLFormCont's default submit button says "Update" (it's the
@@ -541,10 +542,10 @@ class DataExportPage(GeaBasePage):
 
         for job in jobs:
             state = job['state']
-            if state == DONE and job['gzReady']:
+            if state == DONE and job['ready']:
                 dl = HtmlHelper.createLink(
-                    'CSV (gz)',
-                    os.path.join(GEAVars.path.web.exports, job['jobid'] + '.csv.gz'))
+                    'ZIP',
+                    os.path.join(GEAVars.path.web.exports, job['jobid'] + '.zip'))
                 size = _fmtSize(job['size'])
             elif state == ERROR:
                 dl = ''

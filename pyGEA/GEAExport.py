@@ -15,7 +15,7 @@ This module is the backend for a dedicated, robust export path. It:
     single gzipped *long-format* CSV:  channel,timestamp,value,status
   * tracks each export as a "job" via a pair of files in the exports dir:
         <jobid>.status   one-line status:  RUNNING | DONE | ERROR: <msg>  (+ metadata)
-        <jobid>.csv.gz   the gzipped CSV   (present once status is DONE)
+        <jobid>.zip      one CSV per channel  (present once status is DONE)
     The web page polls the .status file and lists all jobs in the dir.
 
 Splitting status/output into plain files (rather than a job queue) matches GEA's
@@ -28,11 +28,11 @@ Python 2 (GEA backend).
 import csv
 import errno
 import glob
-import gzip
 import os
 import re
 import shutil
 import subprocess
+import zipfile
 
 import GEAVars
 from GEAException import DataExportException
@@ -198,8 +198,8 @@ def statusPath(jobid):
     return os.path.join(exportsDir(), _validateJobId(jobid) + '.status')
 
 
-def gzPath(jobid):
-    return os.path.join(exportsDir(), _validateJobId(jobid) + '.csv.gz')
+def zipPath(jobid):
+    return os.path.join(exportsDir(), _validateJobId(jobid) + '.zip')
 
 
 def writeStatus(jobid, state, message='', meta=None):
@@ -221,7 +221,7 @@ def writeStatus(jobid, state, message='', meta=None):
 
 def readStatus(jobid):
     """Parse a status file into a dict. Returns None if the job is unknown.
-    Keys: state, message, channels, start, end, created (+ jobid, size, gzReady)."""
+    Keys: state, message, channels, start, end, created (+ jobid, size, ready)."""
     path = statusPath(jobid)
     try:
         f = open(path, 'r')
@@ -243,14 +243,14 @@ def readStatus(jobid):
         if len(kv) == 2:
             info[kv[0]] = kv[1]
 
-    # Stat once and tolerate a concurrent delete (another viewer / the meta-refresh
-    # could remove the gz between the existence check and the size read).
+    # Stat once and tolerate a concurrent delete (another viewer / the poller could
+    # remove the zip between an existence check and the size read).
     try:
-        info['size'] = os.path.getsize(gzPath(jobid))
-        info['gzReady'] = True
+        info['size'] = os.path.getsize(zipPath(jobid))
+        info['ready'] = True
     except OSError:
         info['size'] = 0
-        info['gzReady'] = False
+        info['ready'] = False
     return info
 
 
@@ -269,7 +269,7 @@ def listJobs():
 def deleteJob(jobid):
     """Remove a job's status + output. Only ever touches the two files for this
     jobid inside the exports dir (jobid is validated first)."""
-    for path in (statusPath(jobid), gzPath(jobid)):
+    for path in (statusPath(jobid), zipPath(jobid)):
         try:
             os.remove(path)
         except OSError, e:
@@ -394,6 +394,22 @@ def _archiveExportCmd(indexPath, matchExpr, startTime, endTime, outFile):
 # values themselves may contain spaces (string/enum PVs), so we never split on spaces.
 _TS_RE = re.compile(r'^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}')
 
+# ArchiveExport's "MM/DD/YYYY HH:MM:SS.fffffffff" -> ISO "YYYY-MM-DD HH:MM:SS.fffffffff".
+_TS_PARTS = re.compile(r'^(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2}:\d{2}(?:\.\d+)?)')
+
+
+def _isoTimestamp(ts):
+    """Reformat ArchiveExport's US-order timestamp to ISO, keeping the full date and
+    all fractional-second digits (pure string reshuffle -- no float parsing, so no
+    precision loss). Excel mangles MM/DD/YYYY-with-fractional-seconds into 'MM:SS.s' and
+    hides the date; ISO 'YYYY-MM-DD HH:MM:SS.fff' sorts correctly and is parsed directly
+    by pandas/most tools. Returns the input unchanged if it doesn't match."""
+    m = _TS_PARTS.match(ts)
+    if not m:
+        return ts
+    mm, dd, yyyy, hms = m.groups()
+    return '%s-%s-%s %s' % (yyyy, mm, dd, hms)
+
 
 def _cleanChannelName(name):
     """ArchiveExport titles a value column with the PV name plus a units/array
@@ -414,18 +430,18 @@ def _parseHeaderChannels(line):
     return [_cleanChannelName(c) for c in cells[1:]]
 
 
-def _parseArchiveExportFile(rawPath, fallbackChannel, writer, seen=None):
-    """Convert one ArchiveExport text file into long-format CSV rows
-    (channel,timestamp,value,status) via the given csv.writer. Returns the number of
-    data rows written.
+def _parseArchiveExportFile(rawPath, fallbackChannel, sink, seen=None):
+    """Convert one ArchiveExport text file into per-channel CSV rows (timestamp,value)
+    via `sink` (a _ChannelSink: sink.row(channel, ts, value)). Returns rows written.
 
-    The file is tab-separated and may carry MORE than one channel column (a PATTERN,
-    or an over-broad match): we read the header to learn which column is which channel
-    and attribute every value to the right one. If no header is found we fall back to
-    `fallbackChannel`. Splitting on tab (not whitespace) keeps values that contain
-    spaces intact.
+    The file is tab-separated and may carry MORE than one channel column (a PATTERN, or
+    an over-broad match): we read the header to learn which column is which channel and
+    route each value to that channel's own file. If no header is found we fall back to
+    `fallbackChannel`. Timestamps are reformatted to ISO with full precision. The
+    status markers ArchiveExport appends (Disconnected/Archive_Off/...) are stripped
+    from the value but not emitted as a column (the export is timestamp,value only).
 
-    `seen`, if given, is a set used to drop duplicate (channel, ts, value) rows."""
+    `seen`, if given, dedups (channel, ts, value) across bisection-boundary seconds."""
     colChannels = None
     written = 0
     f = open(rawPath, 'r')
@@ -440,7 +456,7 @@ def _parseArchiveExportFile(rawPath, fallbackChannel, writer, seen=None):
                     colChannels = hdr
                 continue
             cells = line.split('\t')
-            ts = cells[0].strip()
+            ts = _isoTimestamp(cells[0].strip())
             # Each subsequent cell is one channel's "value[ status]" for this row.
             for i in range(1, len(cells)):
                 cell = cells[i].strip()
@@ -448,18 +464,16 @@ def _parseArchiveExportFile(rawPath, fallbackChannel, writer, seen=None):
                     continue   # no sample for this channel at this timestamp
                 channel = colChannels[i - 1] if (colChannels and
                                                  i - 1 < len(colChannels)) else fallbackChannel
-                # Within a cell the value is the first token and any trailing words are
-                # a status note (e.g. "Disconnected", "Repeat"). A space inside the
-                # value of a string PV stays with the value only if there's no status,
-                # which is the best we can do from this format; status words are a
-                # fixed known set.
-                value, status = _splitValueStatus(cell)
+                # Strip a trailing status word from the value (e.g. "... Disconnected");
+                # we keep only the value. A space inside a string-PV value with no
+                # status word is preserved.
+                value, _status = _splitValueStatus(cell)
                 if seen is not None:
                     key = (channel, ts, value)
                     if key in seen:
                         continue
                     seen.add(key)
-                writer.writerow([channel, ts, value, status])
+                sink.row(channel, ts, value)
                 written += 1
     finally:
         f.close()
@@ -481,6 +495,44 @@ def _splitValueStatus(cell):
     return cell, ''
 
 
+def channelFileName(channel):
+    """Safe per-channel CSV filename: PV chars that are awkward in filenames (':' '/'
+    etc.) become '_'. e.g. 'mc:azCurrentPos' -> 'mc_azCurrentPos.csv'."""
+    safe = re.sub(r'[^A-Za-z0-9.\-]+', '_', channel).strip('_')
+    return (safe or 'channel') + '.csv'
+
+
+class _ChannelSink(object):
+    """Routes (channel, ts, value) rows into one CSV file per channel inside a work
+    dir. Each file gets a 'timestamp,value' header on first write. Tracks the set of
+    channels that received data so the caller knows which files to zip and which
+    requested channels yielded nothing."""
+
+    def __init__(self, workDir):
+        self._dir = workDir
+        self._writers = {}   # channel -> (fileobj, csv.writer)
+        self.files = {}      # channel -> filesystem path
+
+    def row(self, channel, ts, value):
+        w = self._writers.get(channel)
+        if w is None:
+            path = os.path.join(self._dir, channelFileName(channel))
+            fobj = open(path, 'a')
+            writer = csv.writer(fobj)
+            writer.writerow(['timestamp', 'value'])
+            self._writers[channel] = (fobj, writer)
+            self.files[channel] = path
+            w = self._writers[channel]
+        w[1].writerow([ts, value])
+
+    def close(self):
+        for fobj, _writer in self._writers.values():
+            try:
+                fobj.close()
+            except IOError:
+                pass
+
+
 # Don't bisect below this span: a corrupt archive data file covers at most a day or
 # so, so a 1-day floor isolates the bad file while keeping the number of ArchiveExport
 # calls bounded.
@@ -496,7 +548,7 @@ def _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath):
     return proc.returncode, out
 
 
-def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, writer,
+def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, sink,
                 seen=None):
     """Export one channel/pattern over [startTime, endTime], tolerating a corrupt
     archive data file by bisecting the time range.
@@ -517,7 +569,7 @@ def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, writ
 
     rc, out = _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath)
     if rc == 0:
-        rows = _parseArchiveExportFile(rawPath, item, writer, seen) \
+        rows = _parseArchiveExportFile(rawPath, item, sink, seen) \
             if os.path.isfile(rawPath) else 0
         return rows, []
 
@@ -527,9 +579,9 @@ def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, writ
         midSecs = int(startTime.seconds) + span // 2
         mid = Time(midSecs)
         r1, e1 = _exportItem(indexPath, item, isPattern,
-                             startTime, mid, workDir, n, writer, seen)
+                             startTime, mid, workDir, n, sink, seen)
         r2, e2 = _exportItem(indexPath, item, isPattern,
-                             mid, endTime, workDir, n, writer, seen)
+                             mid, endTime, workDir, n, sink, seen)
         return r1 + r2, e1 + e2
 
     # At the floor and still failing: this chunk is unreadable. Report the gap.
@@ -576,54 +628,59 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
 
     indexPath = masterIndexPath()
 
-    gzFile = gzPath(jobid)
-    tmpGz = gzFile + '.tmp'
+    zipFile = zipPath(jobid)
+    tmpZip = zipFile + '.tmp'
     workDir = os.path.join(exportsDir(), _validateJobId(jobid) + '.work')
     _ensureDir(workDir)
+    sink = _ChannelSink(workDir)
+    notes = []   # human-readable per-item problems -> notes.txt in the zip
 
     try:
-        gz = gzip.open(tmpGz, 'wb')
+        for n, (item, isPattern) in enumerate(items):
+            # Per-channel progress (the page polls this). ETA is a plain average:
+            # elapsed-so-far / done * remaining -- honest, not a fake countdown.
+            # Only shown after the first channel, so there's a baseline.
+            msg = 'Exporting channel %d of %d: %s' % (n + 1, total, item)
+            if n > 0:
+                elapsed = Time().seconds - started
+                eta = (elapsed / n) * (total - n)
+                msg += ' (about %s left)' % _humanDuration(eta)
+            writeStatus(jobid, RUNNING, msg, meta)
+
+            rows, errs = _exportItem(indexPath, item, isPattern,
+                                     startTime, endTime, workDir, n, sink)
+            if rows == 0 and not errs:
+                notes.append('%s: no data found in range (channel/pattern not '
+                             'archived?)' % item)
+            for emsg in errs:
+                # A chunk unreadable even at the 1-day floor (e.g. a corrupt archive
+                # data file). Other chunks of this item still exported; note the gap.
+                notes.append('%s: ERROR: %s' % (item, emsg))
+
+        sink.close()
+
+        # Bundle the per-channel CSVs (one file per channel) into the zip. Any problems
+        # go in notes.txt so the user can see what didn't export.
+        zf = zipfile.ZipFile(tmpZip, 'w', zipfile.ZIP_DEFLATED)
         try:
-            writer = csv.writer(gz)
-            writer.writerow(['channel', 'timestamp', 'value', 'status'])
-
-            for n, (item, isPattern) in enumerate(items):
-                # Per-channel progress (the page polls this). ETA is a plain average:
-                # elapsed-so-far / done * remaining -- honest, not a fake countdown.
-                # Only shown after the first channel, so there's a baseline.
-                msg = 'Exporting channel %d of %d: %s' % (n + 1, total, item)
-                if n > 0:
-                    elapsed = Time().seconds - started
-                    eta = (elapsed / n) * (total - n)
-                    msg += ' (about %s left)' % _humanDuration(eta)
-                writeStatus(jobid, RUNNING, msg, meta)
-
-                rows, errs = _exportItem(indexPath, item, isPattern,
-                                         startTime, endTime, workDir, n, writer)
-                if rows == 0 and not errs:
-                    # ArchiveExport exited 0 but produced no samples: the name/pattern
-                    # simply matched nothing archived in this range.
-                    writer.writerow([item, '', '',
-                                     'No data found in range (channel/pattern not '
-                                     'archived?)'])
-                for emsg in errs:
-                    # A chunk that could not be read even at the 1-day floor (e.g. a
-                    # corrupt archive data file). Other chunks of this channel still
-                    # exported above; record the gap so it is visible, not silent.
-                    writer.writerow([item, '', '', 'ERROR: %s' % emsg])
+            for channel in sorted(sink.files):
+                zf.write(sink.files[channel], channelFileName(channel))
+            if notes:
+                zf.writestr('notes.txt', '\n'.join(notes) + '\n')
         finally:
-            gz.close()
+            zf.close()
 
-        os.rename(tmpGz, gzFile)
+        os.rename(tmpZip, zipFile)
         writeStatus(jobid, DONE, 'Export complete.', meta)
     except Exception, e:
-        _safeRemove(tmpGz)
+        sink.close()
+        _safeRemove(tmpZip)
         writeStatus(jobid, ERROR, str(e), meta)
         raise
     finally:
         _safeRemoveTree(workDir)
 
-    return gzFile
+    return zipFile
 
 
 def _humanDuration(seconds):
