@@ -16,9 +16,9 @@ page is the robust alternative for bulk/long-term downloads:
     so you can close the browser and come back later to grab the gzip, or delete one
 
 Query params:
-    ACTION=export   submit a new export (with SYSTEMS/CHANNELS/PATTERN + time widget)
+    ACTION=export   submit a new export (ticked EXPORTCHAN boxes and/or CHANNELS
+                    field, plus the time-selector widget)
     ACTION=delete & JOBID=<id>     remove a job's status + gzip
-    JOBID=<id> & POLL=1            return just that job's current status (for polling)
 
 The backend (sizing, ArchiveExport, CSV conversion, status files) lives in
 pyGEA/GEAExport.py and is shared with the worker.
@@ -149,8 +149,21 @@ class DataExportPage(GeaBasePage):
             "appear in 'Recent exports' below when ready."})
         html.doc.append(html.intro)
 
-        # Export form.
+        # Export form. HTMLFormCont's default submit button says "Update" (it's the
+        # generic plotter form); relabel it "Download" for this page by overriding the
+        # instance's header/footer -- without touching the shared class.
         html.form = HTMLFormCont(vars={'cgifile': self.calledName})
+        _submit = ('<div align="center">'
+                   '<input type="submit" value="Download" '
+                   'onClick="return globalSubmit();"><hr></div>')
+        html.form.header = ['<form METHOD="GET" ACTION="%(cgifile)s">\n'
+                            '<script language="JavaScript">\n'
+                            'var globalSubmitFunctions=new Array();\n'
+                            'function globalSubmit(){'
+                            'for(var i=0;i<globalSubmitFunctions.length;i++){'
+                            'if(!globalSubmitFunctions[i]()){return false;}}return true;}'
+                            '</script>\n' + _submit]
+        html.form.footer = [_submit + '</form>']
         html.doc.append(html.form)
 
         # Simple start/end selector (no plotter entry-list / "fix time" management),
@@ -161,12 +174,11 @@ class DataExportPage(GeaBasePage):
             allCaps=False, monthAsWord=True))
         html.form.append(html.timeSelector)
 
-        # Checkbox tree of ALREADY-ARCHIVED channels (built from the same hierarchy file
-        # the plotter uses). Ticking a channel adds it to the export -- plain HTML
-        # checkboxes, submitted natively, so it does not depend on the add-button JS
-        # that was failing. A free-text field is kept for power users / patterns.
+        # Checkbox tree of ALREADY-ARCHIVED channels, grouped as on the GEA pages.
+        # Ticking a channel adds it to the export -- plain HTML checkboxes, submitted
+        # natively. Below it, a single text field to list channel names directly.
         html.form.append(HTMLCont(body=[self._channelTreeHTML()]))
-        html.form.append(HTMLCont(body=[self._channelTextFieldsHTML()]))
+        html.form.append(HTMLCont(body=[self._channelListFieldHTML()]))
 
         # The submit ("Update") in HTMLFormCont posts the form; ACTION marks it as an
         # export request (vs. the page just rendering the recent-exports table).
@@ -309,22 +321,17 @@ class DataExportPage(GeaBasePage):
             cur[1].append((value, label, isPattern))
         return sections
 
-    def _channelTextFieldsHTML(self):
-        """Free-text Channels / Pattern fields for users who already know PV names or
-        want a regex. Combined with whatever is ticked in the tree."""
+    def _channelListFieldHTML(self):
+        """A single field to list channel names directly (space-separated), combined
+        with whatever is ticked in the tree above."""
+        cur = _esc(self._params.get('CHANNELS', '')) if hasattr(self, '_params') else ''
         return (
             '<div align="center"><table width="700">'
             '<tr><td width="13%%" class="widgetChanSelLabel">Channels:</td>'
-            '<td><input type="text" name="CHANNELS" size="60" maxlength="500" '
-            'value="%s"> <span style="color:#888;">(space-separated PV names; '
-            'optional &mdash; or use the tree above)</span></td></tr>'
-            '<tr><td width="13%%" class="widgetChanSelLabel">Pattern:</td>'
-            '<td><input type="text" name="PATTERN" size="60" maxlength="256" '
-            'value="%s"> <span style="color:#888;">(optional regex, e.g. '
-            'm1:ANB1.*:binDmdRbk1)</span></td></tr>'
+            '<td><input type="text" name="CHANNELS" size="70" maxlength="1000" '
+            'value="%s"></td></tr>'
             '</table></div>'
-        ) % (_esc(self._params.get('CHANNELS', '') if hasattr(self, '_params') else ''),
-             _esc(self._params.get('PATTERN', '') if hasattr(self, '_params') else ''))
+        ) % cur
 
     def _getLocalRequests(self):
         # Always run _processRequest, even with an empty query string, so the recent
@@ -338,7 +345,7 @@ class DataExportPage(GeaBasePage):
             self._params = {}
             self._acted = False
         for k in ("ACTION", "JOBID", "SYSTEMS", "SYSTEMS2",
-                  "CHANNELS", "PATTERN", "EXPORTCHAN",
+                  "CHANNELS", "EXPORTCHAN",
                   "STARTYEAR", "STARTMONTH", "STARTDAY", "STARTHOUR",
                   "STARTMINUTE", "STARTSECOND",
                   "ENDYEAR", "ENDMONTH", "ENDDAY", "ENDHOUR",
@@ -373,17 +380,18 @@ class DataExportPage(GeaBasePage):
 
         # Channels come from the checkbox tree (EXPORTCHAN, space-joined by the request
         # parser) and/or the free-text Channels field; merge and de-dup, keeping order.
+        # The page only deals in explicit channel names; the export backend still
+        # supports patterns, but this UI does not offer one.
         ticked = (p.get('EXPORTCHAN', '') or '').split()
         typed = (p.get('CHANNELS', '') or '').split()
         channels = []
         for c in ticked + typed:
             if c not in channels:
                 channels.append(c)
-        patterns = GEAExport.patternList({'PATTERN': p.get('PATTERN', '')})
+        patterns = []
 
-        if not channels and not patterns:
-            return ("Please tick at least one channel in the tree, or enter a "
-                    "channel/pattern.")
+        if not channels:
+            return "Please tick at least one channel, or list channel names."
         if int(endTime.seconds) <= int(startTime.seconds):
             return "End time must be after start time."
 
