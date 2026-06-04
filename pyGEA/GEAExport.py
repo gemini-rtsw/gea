@@ -31,6 +31,7 @@ import glob
 import os
 import re
 import shutil
+import signal
 import subprocess
 import zipfile
 
@@ -202,6 +203,10 @@ def zipPath(jobid):
     return os.path.join(exportsDir(), _validateJobId(jobid) + '.zip')
 
 
+def jobWorkDir(jobid):
+    return os.path.join(exportsDir(), _validateJobId(jobid) + '.work')
+
+
 def writeStatus(jobid, state, message='', meta=None):
     """Write the one-line status plus a small block of metadata (the human-readable
     request summary the page shows in the recent-exports table). Written atomically
@@ -212,7 +217,7 @@ def writeStatus(jobid, state, message='', meta=None):
     f = open(tmp, 'w')
     try:
         f.write('%s\t%s\n' % (state, message))
-        for k in ('channels', 'start', 'end', 'created'):
+        for k in ('channels', 'start', 'end', 'created', 'pid'):
             f.write('%s\t%s\n' % (k, meta.get(k, '')))
     finally:
         f.close()
@@ -233,7 +238,7 @@ def readStatus(jobid):
         f.close()
 
     info = {'jobid': jobid, 'state': '', 'message': '',
-            'channels': '', 'start': '', 'end': '', 'created': ''}
+            'channels': '', 'start': '', 'end': '', 'created': '', 'pid': ''}
     if lines:
         first = lines[0].split('\t', 1)
         info['state'] = first[0]
@@ -267,14 +272,27 @@ def listJobs():
 
 
 def deleteJob(jobid):
-    """Remove a job's status + output. Only ever touches the two files for this
-    jobid inside the exports dir (jobid is validated first)."""
-    for path in (statusPath(jobid), zipPath(jobid)):
+    """Remove a job entirely: kill its worker if still running (so it stops writing),
+    then delete its status, zip, temp zip, and the .work dir (with any large raw/CSV
+    files inside). Deleting a RUNNING job previously left the .work dir orphaned with
+    hundreds of MB, because the worker's own cleanup (finally: rmtree) only runs if it
+    finishes normally. Only ever touches paths for this validated jobid."""
+    # Kill the worker first, if we recorded its pid and it's still alive.
+    info = readStatus(jobid)
+    if info and info.get('pid'):
+        try:
+            pid = int(info['pid'])
+            os.kill(pid, signal.SIGTERM)
+        except (ValueError, OSError):
+            pass   # gone already / not ours / not a number
+
+    for path in (statusPath(jobid), zipPath(jobid), zipPath(jobid) + '.tmp'):
         try:
             os.remove(path)
         except OSError, e:
             if e.errno != errno.ENOENT:
                 raise
+    _safeRemoveTree(jobWorkDir(jobid))
 
 
 # ----------------------------------------------------------------------------
@@ -683,6 +701,9 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
     meta.setdefault('start', startTime.string16)
     meta.setdefault('end', endTime.string16)
     meta.setdefault('created', Time().string16)
+    # Record our pid so a Delete of a still-running job can stop the worker before
+    # removing its .work dir (else it keeps writing huge files into a deleted job).
+    meta['pid'] = str(os.getpid())
 
     if not channels and not patterns:
         writeStatus(jobid, ERROR, 'No channels or pattern provided.', meta)
