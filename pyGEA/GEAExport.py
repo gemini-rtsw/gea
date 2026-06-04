@@ -562,7 +562,9 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
 
     # (item, isPattern) work units.
     items = [(c, False) for c in channels] + [(p, True) for p in patterns]
-    writeStatus(jobid, RUNNING, 'Exporting %d item(s)...' % len(items), meta)
+    total = len(items)
+    started = Time().seconds
+    writeStatus(jobid, RUNNING, 'Exporting %d channel(s)...' % total, meta)
 
     indexPath = masterIndexPath()
 
@@ -578,6 +580,16 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
             writer.writerow(['channel', 'timestamp', 'value', 'status'])
 
             for n, (item, isPattern) in enumerate(items):
+                # Per-channel progress (the page polls this). ETA is a plain average:
+                # elapsed-so-far / done * remaining -- honest, not a fake countdown.
+                # Only shown after the first channel, so there's a baseline.
+                msg = 'Exporting channel %d of %d: %s' % (n + 1, total, item)
+                if n > 0:
+                    elapsed = Time().seconds - started
+                    eta = (elapsed / n) * (total - n)
+                    msg += ' (about %s left)' % _humanDuration(eta)
+                writeStatus(jobid, RUNNING, msg, meta)
+
                 rows, errs = _exportItem(indexPath, item, isPattern,
                                          startTime, endTime, workDir, n, writer)
                 if rows == 0 and not errs:
@@ -604,6 +616,16 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
         _safeRemoveTree(workDir)
 
     return gzFile
+
+
+def _humanDuration(seconds):
+    """A rough, human-friendly duration string for an ETA (e.g. '2m', '1h 5m')."""
+    s = int(seconds)
+    if s < 60:
+        return '%ds' % s
+    if s < 3600:
+        return '%dm' % (s // 60)
+    return '%dh %dm' % (s // 3600, (s % 3600) // 60)
 
 
 def _safeRemove(path):
