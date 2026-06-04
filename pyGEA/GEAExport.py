@@ -434,7 +434,7 @@ def _parseHeaderChannels(line):
     return [_cleanChannelName(c) for c in cells[1:]]
 
 
-def _parseArchiveExportFile(rawPath, fallbackChannel, sink, seen=None):
+def _parseArchiveExportFile(rawPath, fallbackChannel, sink, lastTs=None):
     """Convert one ArchiveExport text file into per-channel CSV rows (timestamp,value)
     via `sink` (a _ChannelSink: sink.row(channel, ts, value)). Returns rows written.
 
@@ -445,7 +445,13 @@ def _parseArchiveExportFile(rawPath, fallbackChannel, sink, seen=None):
     status markers ArchiveExport appends (Disconnected/Archive_Off/...) are stripped
     from the value but not emitted as a column (the export is timestamp,value only).
 
-    `seen`, if given, dedups (channel, ts, value) across bisection-boundary seconds."""
+    `lastTs` is a {channel: last_timestamp_written} dict the caller carries across the
+    time-windowed calls for one channel. Rows with ts <= the last written ts for that
+    channel are skipped -- this dedups window boundaries (ArchiveExport ranges are
+    inclusive) using O(#channels) memory, NOT O(#samples). Holding every sample (the
+    old `seen` set) is what grew the worker to gigabytes."""
+    if lastTs is None:
+        lastTs = {}
     colChannels = None
     written = 0
     f = open(rawPath, 'r')
@@ -472,12 +478,13 @@ def _parseArchiveExportFile(rawPath, fallbackChannel, sink, seen=None):
                 # we keep only the value. A space inside a string-PV value with no
                 # status word is preserved.
                 value, _status = _splitValueStatus(cell)
-                if seen is not None:
-                    key = (channel, ts, value)
-                    if key in seen:
-                        continue
-                    seen.add(key)
+                # Skip rows at/before the last timestamp already written for this channel
+                # (dedups the inclusive window boundary). O(#channels) memory.
+                prev = lastTs.get(channel)
+                if prev is not None and ts <= prev:
+                    continue
                 sink.row(channel, ts, value)
+                lastTs[channel] = ts
                 written += 1
     finally:
         f.close()
@@ -597,14 +604,14 @@ def _exportItemChunked(indexPath, item, isPattern, startTime, endTime, workDir, 
     e = int(endTime.seconds)
     span = e - s
     nWin = max(1, (span + _CHUNK_SECONDS - 1) // _CHUNK_SECONDS)
-    seen = set()
+    lastTs = {}   # {channel: last ts written} -- bounded boundary dedup across windows
     totalRows = 0
     errs = []
     for w in range(nWin):
         ws = s + w * _CHUNK_SECONDS
         we = min(e, ws + _CHUNK_SECONDS)
         r, er = _exportItem(indexPath, item, isPattern,
-                            Time(ws), Time(we), workDir, n, sink, seen)
+                            Time(ws), Time(we), workDir, n, sink, lastTs)
         totalRows += r
         errs += er
         if progress is not None:
@@ -613,7 +620,7 @@ def _exportItemChunked(indexPath, item, isPattern, startTime, endTime, workDir, 
 
 
 def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, sink,
-                seen=None):
+                lastTs=None):
     """Export one channel/pattern over [startTime, endTime], tolerating a corrupt
     archive data file by bisecting the time range.
 
@@ -624,16 +631,16 @@ def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, sink
     still fails at the floor is reported as an error gap, and every readable chunk is
     written. Returns (rowsWritten, [errorMessage, ...]).
 
-    `seen` dedups (channel, ts, value) so a sample on a bisection boundary second is not
-    written twice; it is created once per top-level item."""
-    if seen is None:
-        seen = set()
+    `lastTs` ({channel: last ts written}) is threaded through so window/bisection
+    boundaries dedup in O(#channels) memory."""
+    if lastTs is None:
+        lastTs = {}
     matchExpr = _matchExpr(item, isPattern)
     rawPath = os.path.join(workDir, 'raw.%d.txt' % n)
 
     rc, out = _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath)
     if rc == 0:
-        rows = _parseArchiveExportFile(rawPath, item, sink, seen) \
+        rows = _parseArchiveExportFile(rawPath, item, sink, lastTs) \
             if os.path.isfile(rawPath) else 0
         return rows, []
 
@@ -643,9 +650,9 @@ def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, sink
         midSecs = int(startTime.seconds) + span // 2
         mid = Time(midSecs)
         r1, e1 = _exportItem(indexPath, item, isPattern,
-                             startTime, mid, workDir, n, sink, seen)
+                             startTime, mid, workDir, n, sink, lastTs)
         r2, e2 = _exportItem(indexPath, item, isPattern,
-                             mid, endTime, workDir, n, sink, seen)
+                             mid, endTime, workDir, n, sink, lastTs)
         return r1 + r2, e1 + e2
 
     # At the floor and still failing: this chunk is unreadable. Report the gap.
