@@ -399,16 +399,20 @@ _TS_PARTS = re.compile(r'^(\d{2})/(\d{2})/(\d{4})\s+(\d{2}:\d{2}:\d{2}(?:\.\d+)?
 
 
 def _isoTimestamp(ts):
-    """Reformat ArchiveExport's US-order timestamp to ISO, keeping the full date and
-    all fractional-second digits (pure string reshuffle -- no float parsing, so no
-    precision loss). Excel mangles MM/DD/YYYY-with-fractional-seconds into 'MM:SS.s' and
-    hides the date; ISO 'YYYY-MM-DD HH:MM:SS.fff' sorts correctly and is parsed directly
-    by pandas/most tools. Returns the input unchanged if it doesn't match."""
+    """Reformat ArchiveExport's US-order timestamp to ISO 8601 with a 'T' separator
+    ('YYYY-MM-DDTHH:MM:SS.fffffffff'), keeping the full date and all fractional-second
+    digits (pure string reshuffle -- no float parsing, so no precision loss).
+
+    The 'T' matters: with a SPACE ('2026-06-04 11:35:46.0') Excel recognizes it as a
+    datetime and reformats the display to 'MM:SS.s', hiding the date. With the 'T'
+    Excel leaves it as text (full date visible), while pandas/Python parse it natively
+    either way. Critical for the multi-year exports this page is for. Returns the input
+    unchanged if it doesn't match."""
     m = _TS_PARTS.match(ts)
     if not m:
         return ts
     mm, dd, yyyy, hms = m.groups()
-    return '%s-%s-%s %s' % (yyyy, mm, dd, hms)
+    return '%s-%s-%sT%s' % (yyyy, mm, dd, hms)
 
 
 def _cleanChannelName(name):
