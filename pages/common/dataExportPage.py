@@ -42,7 +42,7 @@ from pages.geaBasePage import GeaBasePage
 
 # Bump when the channel-tree structure or build logic changes, so a deploy
 # invalidates any cached channel_tree.<ver>.html instead of serving a stale layout.
-_TREE_CACHE_VERSION = 4
+_TREE_CACHE_VERSION = 5
 
 # Tree top level: menu category -> [(display label, <page>.channels file), ...],
 # mirroring the GEA side menu so the export tree matches what users browse. Pages
@@ -263,16 +263,14 @@ class DataExportPage(GeaBasePage):
                                 % (e, shown))
                     if not secBoxes:
                         continue   # drop an empty section
-                    # A section may have a blank title; render its boxes with no
-                    # sub-group header in that case.
-                    if secName:
-                        pageParts.append(
-                            '<details style="margin-left:1em;"><summary>%s</summary>'
-                            '<div style="margin-left:1.5em;">%s</div></details>'
-                            % (_esc(secName), '\n'.join(secBoxes)))
-                    else:
-                        pageParts.append('<div style="margin-left:1.5em;">%s</div>'
-                                         % '\n'.join(secBoxes))
+                    # Every section gets its own collapsible header so channels never
+                    # dangle under the wrong one. Blank-titled sections were already
+                    # merged into the section above in _parsePageChannels; a leading
+                    # blank section (no prior) falls back to the page label.
+                    pageParts.append(
+                        '<details style="margin-left:1em;"><summary>%s</summary>'
+                        '<div style="margin-left:1.5em;">%s</div></details>'
+                        % (_esc(secName or pageLabel), '\n'.join(secBoxes)))
                 if not pageParts:
                     continue   # drop a page with no non-empty sections
                 catParts.append(
@@ -364,7 +362,13 @@ if(window.addEventListener){ window.addEventListener('load', exportSyncChannels,
                     skipping = True
                     continue
                 skipping = False
-                cur = (title, [])     # title may be '' -> rendered with no sub-group
+                if not title and cur is not None:
+                    # A blank-titled #[SECTION] is a continuation of the section above
+                    # it (that's how it reads on the page). Keep adding to the current
+                    # section rather than starting a headerless group, which otherwise
+                    # leaves channels dangling under the wrong header.
+                    continue
+                cur = (title, [])
                 sections.append(cur)
                 continue
             if skipping:
