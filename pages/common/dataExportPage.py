@@ -42,7 +42,7 @@ from pages.geaBasePage import GeaBasePage
 
 # Bump when the channel-tree structure or build logic changes, so a deploy
 # invalidates any cached channel_tree.<ver>.html instead of serving a stale layout.
-_TREE_CACHE_VERSION = 2
+_TREE_CACHE_VERSION = 3
 
 # Tree top level: menu category -> [(display label, <page>.channels file), ...],
 # mirroring the GEA side menu so the export tree matches what users browse. Pages
@@ -169,10 +169,11 @@ class DataExportPage(GeaBasePage):
         _submit = ('<div align="center">'
                    '<input type="submit" value="Download" '
                    'onClick="return globalSubmit();"><hr></div>')
-        # POST, not GET: ticking many channels would overflow a GET URL (Apache caps
-        # it ~8KB) and silently truncate EXPORTCHAN -> channels arriving blank. The
-        # request parser reads the POST body the same way (GEARequest REQUEST_METHOD).
-        html.form.header = ['<form METHOD="POST" ACTION="%(cgifile)s">\n'
+        # GET (the proven path every other GEA page uses). The tree no longer submits a
+        # checkbox per channel -- the selection is collapsed client-side into the single
+        # CHANNELS field -- so the URL stays short for normal use and there's no POST-
+        # body parsing to depend on.
+        html.form.header = ['<form METHOD="GET" ACTION="%(cgifile)s">\n'
                             '<script language="JavaScript">\n'
                             'var globalSubmitFunctions=new Array();\n'
                             'function globalSubmit(){'
@@ -259,13 +260,45 @@ class DataExportPage(GeaBasePage):
                             shown = e if not label else '%s <span style="color:#888;">'\
                                 '(%s)</span>' % (e, _esc(label))
                             out.append('<label style="display:block;">'
-                                       '<input type="checkbox" name="EXPORTCHAN" '
-                                       'value="%s"> %s</label>' % (e, shown))
+                                       '<input type="checkbox" class="expchan" '
+                                       'value="%s" onclick="exportSyncChannels()"> '
+                                       '%s</label>' % (e, shown))
                     out.append('</div></details>')
                 out.append('</div></details>')
             out.append('</div></details>')
         out.append('</div></td></tr></table></div>')
+        out.append(self._channelSyncJS())
         return '\n'.join(out)
+
+    def _channelSyncJS(self):
+        """JS that keeps the 'Channels:' field in sync with the tree checkboxes. On any
+        tick/untick (and once on load), the field is rebuilt as: the values of all
+        checked tree boxes, PLUS any tokens the user typed that don't belong to a tree
+        box (so manual entries survive). The field (CHANNELS) is what the form submits;
+        the checkboxes themselves are not submitted."""
+        return '''<script language="JavaScript">
+function exportSyncChannels(){
+  var fld=document.getElementById('exportChannels');
+  if(!fld) return;
+  var boxes=document.getElementsByClassName
+            ? document.getElementsByClassName('expchan')
+            : [];
+  // Set of all known tree-channel values, and the set currently checked.
+  var known={}, checked=[];
+  for(var i=0;i<boxes.length;i++){
+    known[boxes[i].value]=1;
+    if(boxes[i].checked) checked.push(boxes[i].value);
+  }
+  // Keep manually-typed tokens that aren't tree channels.
+  var manual=[], toks=fld.value.split(/\\s+/);
+  for(var j=0;j<toks.length;j++){
+    if(toks[j] && !known[toks[j]] && manual.indexOf(toks[j])==-1) manual.push(toks[j]);
+  }
+  fld.value=checked.concat(manual).join(' ');
+}
+// Reflect any pre-checked state on load.
+if(window.addEventListener){ window.addEventListener('load', exportSyncChannels, false); }
+</script>'''
 
     def _parsePageChannels(self, pageFile):
         """Parse a GEA <page>.channels file into [(sectionName, [(value, label,
@@ -338,14 +371,19 @@ class DataExportPage(GeaBasePage):
         return sections
 
     def _channelListFieldHTML(self):
-        """A single field to list channel names directly (space-separated), combined
-        with whatever is ticked in the tree above."""
+        """The single source of truth for what gets exported: a text field holding the
+        space-separated channel list. Ticking boxes in the tree auto-fills this field
+        (exportSyncChannels), and you can also type/edit names directly. The form
+        submits THIS field (CHANNELS) -- the tree checkboxes are not submitted
+        themselves, so it doesn't matter how many you tick."""
         cur = _esc(self._params.get('CHANNELS', '')) if hasattr(self, '_params') else ''
         return (
             '<div align="center"><table width="700">'
             '<tr><td width="13%%" class="widgetChanSelLabel">Channels:</td>'
-            '<td><input type="text" name="CHANNELS" size="70" maxlength="1000" '
-            'value="%s"></td></tr>'
+            '<td><input type="text" id="exportChannels" name="CHANNELS" size="70" '
+            'maxlength="100000" value="%s"> '
+            '<span style="color:#888;">(ticked tree channels appear here; you can '
+            'also edit)</span></td></tr>'
             '</table></div>'
         ) % cur
 
@@ -361,7 +399,7 @@ class DataExportPage(GeaBasePage):
             self._params = {}
             self._acted = False
         for k in ("ACTION", "JOBID", "SYSTEMS", "SYSTEMS2",
-                  "CHANNELS", "EXPORTCHAN",
+                  "CHANNELS",
                   "STARTYEAR", "STARTMONTH", "STARTDAY", "STARTHOUR",
                   "STARTMINUTE", "STARTSECOND",
                   "ENDYEAR", "ENDMONTH", "ENDDAY", "ENDHOUR",
@@ -437,14 +475,13 @@ class DataExportPage(GeaBasePage):
         startTime = Time().fromStartTimeDict(p, allCaps=True, monthAsWord="Auto")
         endTime = Time().fromEndTimeDict(p, allCaps=True, monthAsWord="Auto")
 
-        # Channels come from the checkbox tree (EXPORTCHAN, space-joined by the request
-        # parser) and/or the free-text Channels field; merge and de-dup, keeping order.
-        # The page only deals in explicit channel names; the export backend still
-        # supports patterns, but this UI does not offer one.
-        ticked = (p.get('EXPORTCHAN', '') or '').split()
+        # Channels all come from the single CHANNELS field: the tree checkboxes auto-fill
+        # it client-side (exportSyncChannels) and the user can also type names. De-dup,
+        # keep order. The page deals only in explicit names (no pattern field), though
+        # the export backend still supports patterns.
         typed = (p.get('CHANNELS', '') or '').split()
         channels = []
-        for c in ticked + typed:
+        for c in typed:
             if c not in channels:
                 channels.append(c)
         patterns = []
