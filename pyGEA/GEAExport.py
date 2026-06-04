@@ -473,6 +473,63 @@ def _splitValueStatus(cell):
     return cell, ''
 
 
+# Don't bisect below this span: a corrupt archive data file covers at most a day or
+# so, so a 1-day floor isolates the bad file while keeping the number of ArchiveExport
+# calls bounded.
+_BISECT_FLOOR_SECONDS = 86400
+
+
+def _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath):
+    """One ArchiveExport invocation. Returns (returncode, combined_output)."""
+    _safeRemove(rawPath)
+    cmd = _archiveExportCmd(indexPath, matchExpr, startTime, endTime, rawPath)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out = proc.communicate()[0]
+    return proc.returncode, out
+
+
+def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, writer,
+                seen=None):
+    """Export one channel/pattern over [startTime, endTime], tolerating a corrupt
+    archive data file by bisecting the time range.
+
+    ArchiveExport aborts the whole request when it hits an unreadable data file (a bad
+    data header, a missing day file, etc.), which would otherwise lose ALL of a
+    channel's data even though only one day is corrupt. So on a non-zero exit we split
+    the range in half and retry each half, down to a 1-day floor; only the chunk that
+    still fails at the floor is reported as an error gap, and every readable chunk is
+    written. Returns (rowsWritten, [errorMessage, ...]).
+
+    `seen` dedups (channel, ts, value) so a sample on a bisection boundary second is not
+    written twice; it is created once per top-level item."""
+    if seen is None:
+        seen = set()
+    matchExpr = _matchExpr(item, isPattern)
+    rawPath = os.path.join(workDir, 'raw.%d.txt' % n)
+
+    rc, out = _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath)
+    if rc == 0:
+        rows = _parseArchiveExportFile(rawPath, item, writer, seen) \
+            if os.path.isfile(rawPath) else 0
+        return rows, []
+
+    # Failed. If the range is still wide, bisect and retry each half.
+    span = int(endTime.seconds) - int(startTime.seconds)
+    if span > _BISECT_FLOOR_SECONDS:
+        midSecs = int(startTime.seconds) + span // 2
+        mid = Time(midSecs)
+        r1, e1 = _exportItem(indexPath, item, isPattern,
+                             startTime, mid, workDir, n, writer, seen)
+        r2, e2 = _exportItem(indexPath, item, isPattern,
+                             mid, endTime, workDir, n, writer, seen)
+        return r1 + r2, e1 + e2
+
+    # At the floor and still failing: this chunk is unreadable. Report the gap.
+    msg = (out or '').strip().replace('\n', ' ')
+    msg = '%s to %s: %s' % (startTime.string16, endTime.string16, msg)
+    return 0, [msg]
+
+
 def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=None):
     """Run the full export for one job: ArchiveExport per item against the master
     archive index, convert to one long-format gzipped CSV, and update the status file
@@ -521,28 +578,19 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
             writer.writerow(['channel', 'timestamp', 'value', 'status'])
 
             for n, (item, isPattern) in enumerate(items):
-                rawPath = os.path.join(workDir, 'raw.%d.txt' % n)
-                _safeRemove(rawPath)
-                cmd = _archiveExportCmd(indexPath, _matchExpr(item, isPattern),
-                                        startTime, endTime, rawPath)
-                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT)
-                out = proc.communicate()[0]
-
-                rows = 0
-                if proc.returncode == 0 and os.path.isfile(rawPath):
-                    rows = _parseArchiveExportFile(rawPath, item, writer)
-
-                if rows == 0:
-                    # No data for this item. Record why as a row so the user isn't left
-                    # with a silently-empty CSV: a non-zero exit is a real error, else
-                    # the name/pattern simply matched nothing in the range (ArchiveExport
-                    # exits 0 with a header-only file in that case).
-                    if proc.returncode != 0:
-                        note = 'ERROR: %s' % (out or '').strip()
-                    else:
-                        note = 'No data found in range (channel/pattern not archived?)'
-                    writer.writerow([item, '', '', note])
+                rows, errs = _exportItem(indexPath, item, isPattern,
+                                         startTime, endTime, workDir, n, writer)
+                if rows == 0 and not errs:
+                    # ArchiveExport exited 0 but produced no samples: the name/pattern
+                    # simply matched nothing archived in this range.
+                    writer.writerow([item, '', '',
+                                     'No data found in range (channel/pattern not '
+                                     'archived?)'])
+                for emsg in errs:
+                    # A chunk that could not be read even at the 1-day floor (e.g. a
+                    # corrupt archive data file). Other chunks of this channel still
+                    # exported above; record the gap so it is visible, not silent.
+                    writer.writerow([item, '', '', 'ERROR: %s' % emsg])
         finally:
             gz.close()
 
