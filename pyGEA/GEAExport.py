@@ -610,12 +610,17 @@ def _exportItemChunked(indexPath, item, isPattern, startTime, endTime, workDir, 
     for w in range(nWin):
         ws = s + w * _CHUNK_SECONDS
         we = min(e, ws + _CHUNK_SECONDS)
+        # Announce the window BEFORE running it, so the status shows movement
+        # immediately (a single window can take a while) rather than sitting on the
+        # plain channel line until the first window finishes. `starting=True` marks it.
+        if progress is not None:
+            progress(w + 1, nWin, totalRows, True)
         r, er = _exportItem(indexPath, item, isPattern,
                             Time(ws), Time(we), workDir, n, sink, lastTs)
         totalRows += r
         errs += er
         if progress is not None:
-            progress(w + 1, nWin, totalRows)
+            progress(w + 1, nWin, totalRows, False)
     return totalRows, errs
 
 
@@ -728,13 +733,16 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
             prefix = 'Channel %d of %d (%s)' % (n + 1, total, item)
             writeStatus(jobid, RUNNING, prefix + '...' + _etaSuffix(), meta)
 
-            # Live progress WITHIN this channel: status updates after each time window,
-            # and the whole-job %/ETA advances with every window.
-            def _progress(done, nwin, partRows, _prefix=prefix):
-                doneWindows[0] += 1
+            # Live progress WITHIN this channel: the page polls this. Called once before
+            # each window (starting=True, so the status moves immediately) and once after
+            # (starting=False, which counts the window toward the whole-job %/ETA).
+            def _progress(done, nwin, partRows, starting, _prefix=prefix):
+                if not starting:
+                    doneWindows[0] += 1
+                word = 'reading' if starting else 'done'
                 writeStatus(jobid, RUNNING,
-                            '%s -- part %d of %d (%d rows)%s'
-                            % (_prefix, done, nwin, partRows, _etaSuffix()), meta)
+                            '%s -- part %d of %d %s (%d rows)%s'
+                            % (_prefix, done, nwin, word, partRows, _etaSuffix()), meta)
 
             rows, errs = _exportItemChunked(indexPath, item, isPattern,
                                             startTime, endTime, workDir, n, sink,
