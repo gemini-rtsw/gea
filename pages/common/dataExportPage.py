@@ -168,7 +168,10 @@ class DataExportPage(GeaBasePage):
         _submit = ('<div align="center">'
                    '<input type="submit" value="Download" '
                    'onClick="return globalSubmit();"><hr></div>')
-        html.form.header = ['<form METHOD="GET" ACTION="%(cgifile)s">\n'
+        # POST, not GET: ticking many channels would overflow a GET URL (Apache caps
+        # it ~8KB) and silently truncate EXPORTCHAN -> channels arriving blank. The
+        # request parser reads the POST body the same way (GEARequest REQUEST_METHOD).
+        html.form.header = ['<form METHOD="POST" ACTION="%(cgifile)s">\n'
                             '<script language="JavaScript">\n'
                             'var globalSubmitFunctions=new Array();\n'
                             'function globalSubmit(){'
