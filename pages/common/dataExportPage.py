@@ -123,6 +123,12 @@ def _esc(s):
     return cgi.escape(s or '', quote=True).replace('%', '&#37;')
 
 
+def _jsStr(s):
+    """A safe single-quoted JS string literal for s (used for the poll URL)."""
+    s = (s or '').replace('\\', '\\\\').replace("'", "\\'")
+    return "'" + s + "'"
+
+
 def _fmtSize(nbytes):
     """Human-readable file size."""
     n = float(nbytes)
@@ -139,6 +145,12 @@ class DataExportPage(GeaBasePage):
         GeaBasePage._assemblePage(self, topMenuList=topMenuList)
         html = self.html
         self._note = None        # message shown at the top after an action
+
+        # Status poll (ACTION=status, standalone): the doc is already a bare container
+        # and _processRequest will append just the recent-exports table. Skip building
+        # the heavy form/tree -- it isn't shown and would waste the cache read.
+        if 'ACTION=status' in GEAVars.environ.get('QUERY_STRING', ''):
+            return
 
         # Intro.
         html.intro = HTMLTextBox(vars={'text':
@@ -357,18 +369,30 @@ class DataExportPage(GeaBasePage):
         p = self._params
         action = p.get("ACTION", "")
 
-        if not self._acted:
-            self._acted = True
-            try:
-                if action == "delete" and p.get("JOBID", ""):
-                    GEAExport.deleteJob(p["JOBID"])
-                    self._note = "Deleted export %s." % p["JOBID"]
-                elif action == "export":
-                    self._note = self._doExport(p, stream)
-            except Exception, e:
-                self._note = "Error: %s" % e
+        if self._acted:
+            return
+        self._acted = True
 
-            self._renderResults(request)
+        # Status fragment: return ONLY the recent-exports table, standalone. The page's
+        # JS polls this every few seconds while a job builds, swapping it into the
+        # status div -- so the channel tree (and any groups you've opened) stay put.
+        # This replaced a full-page meta-refresh, which collapsed the tree each poll.
+        if action == "status":
+            self.standAlone = True
+            widget, _building = self._recentExportsWidget()
+            self.html.doc.append(widget)
+            return
+
+        try:
+            if action == "delete" and p.get("JOBID", ""):
+                GEAExport.deleteJob(p["JOBID"])
+                self._note = "Deleted export %s." % p["JOBID"]
+            elif action == "export":
+                self._note = self._doExport(p, stream)
+        except Exception, e:
+            self._note = "Error: %s" % e
+
+        self._renderResults(request)
 
     # ---- actions -----------------------------------------------------------
 
@@ -456,18 +480,49 @@ class DataExportPage(GeaBasePage):
             self.html.doc.insert(0, HTMLTextBox(vars={'text': _esc(self._note)}))
 
         widget, building = self._recentExportsWidget()
-        if building:
-            # Refresh to the CLEAN page URL (no query string), NOT the current one --
-            # the current URL still carries ACTION=export & the channel/time params, so
-            # a bare refresh would re-submit the export every interval (a pile of dup
-            # jobs). Pointing at calledName just re-renders the listing until done.
-            self.html.doc.insert(0, HTMLCont(body=[
-                '<meta http-equiv="refresh" content="5; url=%s">' % self.calledName]))
+        # Wrap the table in a div the JS can refresh in place. Polling only this div
+        # (not a full-page reload) leaves the channel tree and any groups you've opened
+        # untouched while a job builds.
+        self.html.doc.append(HTMLCont(body=['<div id="exportStatus">']))
         self.html.doc.append(widget)
+        self.html.doc.append(HTMLCont(body=['</div>']))
+        if building:
+            self.html.doc.append(HTMLCont(body=[self._statusPollJS()]))
 
         # Restore the submitted time range into the selector. (The channel tree and
         # text fields render their own state from self._params directly.)
         self._setWidgetVars(self.html.timeSelector, self._params, [])
+
+    def _statusPollJS(self):
+        """JS that refreshes ONLY the #exportStatus div (the recent-exports table) every
+        5s by fetching ACTION=status, leaving the channel tree untouched. Stops polling
+        once the fetched fragment no longer contains a 'building' job. Falls back to
+        XMLHttpRequest so it works on older browsers in the control room."""
+        # STANDALONE=true makes run() build a bare container (no header/side-menu) so
+        # the fetched fragment is just the table.
+        url = '%s?ACTION=status&STANDALONE=true' % self.calledName
+        return ('''<script language="JavaScript">
+(function(){
+  var url=%s, timer=null;
+  function poll(){
+    var x=new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.onreadystatechange=function(){
+      if(x.readyState!=4) return;
+      if(x.status==200 && x.responseText){
+        var d=document.getElementById('exportStatus');
+        if(d){ d.innerHTML=x.responseText; }
+        // Keep polling only while something is still building.
+        if(x.responseText.indexOf('<!--BUILDING-->')==-1){
+          if(timer){ clearInterval(timer); timer=null; }
+        }
+      }
+    };
+    x.send();
+  }
+  timer=setInterval(poll, 5000);
+})();
+</script>''' % _jsStr(url))
 
     def _recentExportsWidget(self):
         """An HTML table of every job in the exports dir, newest first, with a
@@ -514,6 +569,10 @@ class DataExportPage(GeaBasePage):
                     status, size, dl, delLink))
 
         rows.append('</table>')
+        if building:
+            # Explicit marker the poll JS keys off (don't rely on matching visible
+            # text, which a channel name could coincidentally contain).
+            rows.append('<!--BUILDING-->')
         return HTMLCont(body=['\n'.join(rows)]), building
 
 
