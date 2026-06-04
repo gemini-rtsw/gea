@@ -40,6 +40,68 @@ from GEATime import Time
 from pages.geaBasePage import GeaBasePage
 
 
+# Tree top level: menu category -> [(display label, <page>.channels file), ...],
+# mirroring the GEA side menu so the export tree matches what users browse. Pages
+# that don't exist (or are empty) at a given site are simply skipped at render time.
+_MENU_TREE = [
+    ('Systems', [
+        ('A&G', 'systems/agPage.channels'),
+        ('CRCS', 'systems/crcsPage.channels'),
+        ('ECS', 'systems/ecsPage.channels'),
+        ('GIS', 'systems/gisPage.channels'),
+        ('GWS (Weather)', 'systems/gwsPage.channels'),
+        ('Laser', 'systems/laserPage.channels'),
+        ('  BTO', 'systems/laser/btoPage.channels'),
+        ('  LIS', 'systems/laser/lisPage.channels'),
+        ('  LSE', 'systems/laser/lsePage.channels'),
+        ('LGSF', 'systems/lgsfPage.channels'),
+        ('M2TS', 'systems/m2tsPage.channels'),
+        ('MCS', 'systems/mcsPage.channels'),
+        ('PCS', 'systems/pcsPage.channels'),
+        ('PR', 'systems/prPage.channels'),
+        ('SCS', 'systems/scsPage.channels'),
+        ('TCS', 'systems/tcsPage.channels'),
+        ('WFS', 'systems/wfsPage.channels'),
+        ('ASCAM', 'systems/ascamPage.channels'),
+    ]),
+    ('Instruments', [
+        ('Altair', 'instruments/altairPage.channels'),
+        ('GMOS', 'instruments/gmosPage.channels'),
+        ('GNIRS', 'instruments/gnirsPage.channels'),
+        ('GPOL/GCAL', 'instruments/gpolGcalPage.channels'),
+        ('IGRINS-2', 'instruments/igrins2Page.channels'),
+        ('Michelle', 'instruments/michellePage.channels'),
+        ('NIFS', 'instruments/nifsPage.channels'),
+        ('NIRI', 'instruments/niriPage.channels'),
+        ('NIRI Focus', 'instruments/niri/niriFocusPage.channels'),
+        ('TReCS', 'instruments/trecsPage.channels'),
+        ('bHROS', 'instruments/bhrosPage.channels'),
+    ]),
+    ('Engineering', [
+        ('Environment', 'engineering/environmentPage.channels'),
+        ('Telescope', 'engineering/telescopePage.channels'),
+        ('IQ', 'engineering/iqPage.channels'),
+        ('Seeing Monitor', 'engineering/seeingMonitorPage.channels'),
+        ('Altair', 'engineering/altairPage.channels'),
+        ('GMOS', 'engineering/gmosPage.channels'),
+        ('GNIRS', 'engineering/gnirsPage.channels'),
+        ('Michelle', 'engineering/michellePage.channels'),
+        ('NIFS', 'engineering/nifsPage.channels'),
+        ('NIRI', 'engineering/niriPage.channels'),
+        ('NIRI Focus', 'engineering/niriFocusPage.channels'),
+        ('TReCS', 'engineering/trecsPage.channels'),
+        ('bHROS', 'engineering/bhrosPage.channels'),
+    ]),
+    ('Compilations', [
+        ('Calibrations', 'compilations/calPage.channels'),
+        ('IQ', 'compilations/iqPage.channels'),
+        ('Sensors', 'compilations/sensorsPage.channels'),
+        ('Temporary', 'compilations/temporaryPage.channels'),
+        ('Versions', 'compilations/versionsPage.channels'),
+    ]),
+]
+
+
 def _esc(s):
     """Make an untrusted string safe to splice into the recent-exports HTML. Channel
     names / patterns / ArchiveExport error text are user- or data-controlled and the
@@ -108,42 +170,122 @@ class DataExportPage(GeaBasePage):
             '<input type="hidden" name="ACTION" value="export">']))
 
     def _channelTreeHTML(self):
-        """A collapsible checkbox tree of already-archived channels, built from the
-        LIVE archiver list -- grouped by archiver, from the data server (the same
-        backend the GEA system pages resolve against), so it matches what those pages
-        show. Each leaf channel is a plain HTML checkbox (name=EXPORTCHAN,
-        value=<channel>); checking it includes that channel in the export. No
-        JavaScript -- the browser submits the checked values natively, which is why
-        this works where the old add-button flow did not.
+        """A collapsible checkbox tree that mirrors the GEA page grouping: menu category
+        -> page -> Section -> Cell -> channels (with the human labels from the page
+        files). Built from the same <page>.channels files the system/engineering/etc.
+        pages render, so it matches what users see on those displays.
 
-        NOT built from plotterPage.channels: that is a hand-maintained ~500-channel
-        'favorites' file that nothing keeps in sync, so it did not match reality."""
-        try:
-            groups = GEAExport.archivedChannelTree()
-        except Exception, e:
-            return ('<div class="widgetChanSelLabel">Channel list unavailable '
-                    '(data server): %s</div>' % _esc(str(e)))
-
-        if not groups:
-            return ('<div class="widgetChanSelLabel">No archived channels reported by '
-                    'the data server.</div>')
-
+        Page lines that are regex patterns (the GEA default) are expanded against the
+        live archived-PV list (GEAExport.expandPattern) so every checkbox is a concrete,
+        individually selectable PV. Plain HTML checkboxes (name=EXPORTCHAN) -- the
+        browser submits the checked values natively, no JS."""
         out = ['<div align="center"><table width="700"><tr><td>',
                '<b>Archived channels</b> &mdash; tick to include in the export '
-               '(grouped by archiver):',
-               '<div style="max-height:360px;overflow:auto;border:1px solid #ccc;'
+               '(grouped as on the GEA pages):',
+               '<div style="max-height:380px;overflow:auto;border:1px solid #ccc;'
                'padding:6px;text-align:left;">']
-        for archiver, channels in groups:
-            out.append('<details><summary><b>%s</b> (%d)</summary>'
-                       '<div style="margin-left:1.5em;">'
-                       % (_esc(archiver), len(channels)))
-            for ch in channels:
-                e = _esc(ch)
-                out.append('<label style="display:block;"><input type="checkbox" '
-                           'name="EXPORTCHAN" value="%s"> %s</label>' % (e, e))
+
+        seen_global = set()   # avoid the same PV appearing as a duplicate checkbox
+        for catName, pages in _MENU_TREE:
+            out.append('<details><summary><b>%s</b></summary>'
+                       '<div style="margin-left:1em;">' % _esc(catName))
+            for pageLabel, pageFile in pages:
+                sections = self._parsePageChannels(pageFile)
+                if not sections:
+                    continue
+                out.append('<details style="margin-left:1em;"><summary>%s</summary>'
+                           '<div style="margin-left:1em;">' % _esc(pageLabel))
+                for secName, entries in sections:
+                    out.append('<details style="margin-left:1em;"><summary>%s'
+                               '</summary><div style="margin-left:1.5em;">'
+                               % _esc(secName or '(unnamed)'))
+                    for value, label, isPattern in entries:
+                        pvs = GEAExport.expandPattern(value) if isPattern else [value]
+                        for pv in pvs:
+                            if pv in seen_global:
+                                continue
+                            seen_global.add(pv)
+                            e = _esc(pv)
+                            shown = e if not label else '%s <span style="color:#888;">'\
+                                '(%s)</span>' % (e, _esc(label))
+                            out.append('<label style="display:block;">'
+                                       '<input type="checkbox" name="EXPORTCHAN" '
+                                       'value="%s"> %s</label>' % (e, shown))
+                    out.append('</div></details>')
+                out.append('</div></details>')
             out.append('</div></details>')
         out.append('</div></td></tr></table></div>')
         return '\n'.join(out)
+
+    def _parsePageChannels(self, pageFile):
+        """Parse a GEA <page>.channels file into [(sectionName, [(value, label,
+        isPattern), ...]), ...], preserving the section/cell grouping and the human
+        labels. Mirrors HTMLDynChanTable's line format: '#[SECTION] name', '#[CELL]
+        name' (a labeled sub-group), and channel lines '<value> [C] {query} # label'
+        where [C] marks a literal channel (else a regex pattern). Other '#[...]'
+        option lines and site-mismatched [MK]/[CP] lines are skipped."""
+        import GEAVars
+        path = os.path.join(GEAVars.path.fileSys.geaConf, 'pages', pageFile)
+        try:
+            f = open(path)
+            try:
+                text = f.read()
+            finally:
+                f.close()
+        except IOError:
+            return []
+
+        site = GEAVars.site
+        sections = []
+        cur = None        # (name, entries)
+        for raw in text.split('\n'):
+            line = raw.rstrip()
+            if line.strip() == '':
+                continue
+            # Site gating on any line.
+            skip = False
+            for s in ('[MK]', '[CP]'):
+                if s in line:
+                    if s[1:3] != site:
+                        skip = True
+                        break
+                    line = line.replace(s, '')
+            if skip:
+                continue
+
+            if line.startswith('#[SECTION]'):
+                cur = (line[len('#[SECTION]'):].strip(), [])
+                sections.append(cur)
+                continue
+            if line.startswith('#[CELL]'):
+                continue   # a cell is just a visual label; flatten its channels in
+            if line.startswith('#'):
+                continue   # other options / comments
+
+            # A channel/pattern line. Strip [C] (literal), [FORMAT1], {query}.
+            isPattern = True
+            if '[C]' in line:
+                line = line.replace('[C]', '')
+                isPattern = False
+            line = line.replace('[FORMAT1]', '')
+            b, e = line.find('{'), line.find('}')
+            if -1 < b < e:
+                line = line[:b] + line[e + 1:]
+            # Human label after '#'.
+            i = line.find('#')
+            if i > 0:
+                value = line[:i].strip()
+                label = line[i:].lstrip('#').strip()
+            else:
+                value = line.strip()
+                label = ''
+            if not value:
+                continue
+            if cur is None:
+                cur = ('', [])
+                sections.append(cur)
+            cur[1].append((value, label, isPattern))
+        return sections
 
     def _channelTextFieldsHTML(self):
         """Free-text Channels / Pattern fields for users who already know PV names or

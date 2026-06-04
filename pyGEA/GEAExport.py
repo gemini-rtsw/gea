@@ -247,39 +247,42 @@ def masterIndexPath():
         "Could not find the master archive index from the data server.\n")
 
 
-def _nameFromMatch(match):
-    """The data server's archiver.names() returns each channel as a struct; the PV
-    name is the 'name' field. Pull it by key, falling back to the positional access
-    the older code used (match.items()[4][1]) if the struct shape differs."""
-    try:
-        return match['name']
-    except (KeyError, TypeError):
-        return match.items()[4][1]
+_allArchivedPVs = None
 
 
-def archivedChannelTree():
-    """List every archived channel, grouped by archiver, straight from the live data
-    server -- the SAME backend the GEA system pages and the plotter resolve against, so
-    this matches what those pages show. Returns an ordered list of
-    (archiverName, [channel, ...]).
-
-    NOTE we deliberately do NOT use plotterPage.channels here: that file is a
-    hand-maintained 'favorites' list (~500 of ~4500 archived PVs) that nothing keeps in
-    sync, which is why the first cut of the tree looked wrong."""
-    groups = []
-    for a in dataServer.archiver.archives():
-        name = a.get('name', '')
-        if name == '':
-            continue   # the master/combined index, not a real archiver
+def allArchivedPVs():
+    """Sorted list of every archived PV, read from the on-disk archiver configs
+    ($GEA_CONF/config/<archiver>/<archiver>.cnfg via gea_channel). This is the complete
+    ground-truth list and -- unlike querying the data server per archiver -- needs no
+    XML-RPC round-trips, so it is fast enough to use on every page load. Cached for the
+    life of the process. Used to expand the GEA page files' regex patterns into the
+    concrete channels shown as checkboxes."""
+    global _allArchivedPVs
+    if _allArchivedPVs is None:
+        import gea_channel
+        pvs = set()
         try:
-            matches = dataServer.archiver.names(a['key'], '')   # '' / '.*' = all PVs
-        except Exception:
-            matches = []
-        channels = sorted(_nameFromMatch(m) for m in matches)
-        if channels:
-            groups.append((name, channels))
-    groups.sort()
-    return groups
+            for arch in gea_channel.list_archivers():
+                try:
+                    pvs |= gea_channel.existing_pvs(arch)
+                except gea_channel.ChannelError:
+                    pass
+        except gea_channel.ChannelError:
+            pass
+        _allArchivedPVs = sorted(pvs)
+    return _allArchivedPVs
+
+
+def expandPattern(pattern):
+    """Concrete archived PVs matching an ArchiveExport-style regex `pattern`, in sorted
+    order. Used to turn a GEA page file's pattern line (e.g.
+    'm1:MCB001:M1.(Encoder|MotDmd)$') into individual checkboxes. Anchored like the
+    data server's name matching (search from the start)."""
+    try:
+        rx = re.compile(pattern)
+    except re.error:
+        return []
+    return [pv for pv in allArchivedPVs() if rx.match(pv)]
 
 
 def _archiveExportCmd(indexPath, matchExpr, startTime, endTime, outFile):
