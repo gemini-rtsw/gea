@@ -33,7 +33,7 @@ import subprocess
 import GEAVars
 import GEAExport
 from GEAExport import RUNNING, DONE, ERROR
-from GEAHtml import HTMLFormCont, HTMLTimeSelectorPlotting, HTMLDynChanSelector, \
+from GEAHtml import HTMLFormCont, HTMLTimeSelectorSimple, HTMLDynChanSelector, \
     HTMLTextBox, HTMLCont, HtmlHelper
 from GEARequest import RequestCollection, Request
 from GEATime import Time
@@ -90,21 +90,80 @@ class DataExportPage(GeaBasePage):
         html.form = HTMLFormCont(vars={'cgifile': self.calledName})
         html.doc.append(html.form)
 
-        # Default time range: last 24h, same as the plotter.
-        html.timeSelector = HTMLTimeSelectorPlotting()
+        # Simple start/end selector (no plotter entry-list / "fix time" management),
+        # defaulting to the last 24h.
+        html.timeSelector = HTMLTimeSelectorSimple()
         html.timeSelector.vars.update(Time.startEndTime2Dict(
             Time(self.genTime.seconds - Time.secPerDay), self.genTime,
             allCaps=False, monthAsWord=True))
         html.form.append(html.timeSelector)
 
-        html.chanSelector = HTMLDynChanSelector(chanHierFile=gChanHier, vars={
-            'systems': '', 'systems2': '', 'pattern': '', 'channels': ''})
-        html.form.append(html.chanSelector)
+        # Checkbox tree of ALREADY-ARCHIVED channels (built from the same hierarchy file
+        # the plotter uses). Ticking a channel adds it to the export -- plain HTML
+        # checkboxes, submitted natively, so it does not depend on the add-button JS
+        # that was failing. A free-text field is kept for power users / patterns.
+        html.form.append(HTMLCont(body=[self._channelTreeHTML()]))
+        html.form.append(HTMLCont(body=[self._channelTextFieldsHTML()]))
 
         # The submit ("Update") in HTMLFormCont posts the form; ACTION marks it as an
         # export request (vs. the page just rendering the recent-exports table).
         html.form.append(HTMLCont(body=[
             '<input type="hidden" name="ACTION" value="export">']))
+
+    def _channelTreeHTML(self):
+        """A collapsible checkbox tree of already-archived channels, built from the
+        same hierarchy file the plotter uses. Each leaf channel is a plain HTML
+        checkbox (name=EXPORTCHAN, value=<channel>); checking it includes that channel
+        in the export. No JavaScript -- the browser submits the checked values
+        natively, which is why this works where the old add-button flow did not.
+
+        We reuse HTMLDynChanSelector only as a PARSER (it builds .dataList: system ->
+        category -> leaf channel, each leaf carrying its archiver) and render our own
+        markup."""
+        try:
+            tree = HTMLDynChanSelector(chanHierFile=gChanHier).dataList
+        except Exception, e:
+            return ('<div class="widgetChanSelLabel">Channel list unavailable: %s'
+                    '</div>' % _esc(str(e)))
+
+        out = ['<div align="center"><table width="700"><tr><td>',
+               '<b>Archived channels</b> &mdash; tick to include in the export:',
+               '<div style="max-height:320px;overflow:auto;border:1px solid #ccc;'
+               'padding:6px;text-align:left;">']
+        for system in tree:
+            out.append('<details><summary><b>%s</b></summary>'
+                       % _esc(system.name))
+            for cat in system.getTrees():
+                out.append('<details style="margin-left:1em;">'
+                           '<summary>%s</summary><div style="margin-left:1.5em;">'
+                           % _esc(cat.name))
+                for leaf in cat.getTrees():
+                    ch = _esc(leaf.name)
+                    # value carries the channel; data-arch lets us collect the
+                    # archiver server-side from the submitted names if needed.
+                    out.append('<label style="display:block;"><input type="checkbox" '
+                               'name="EXPORTCHAN" value="%s"> %s</label>' % (ch, ch))
+                out.append('</div></details>')
+            out.append('</details>')
+        out.append('</div></td></tr></table></div>')
+        return '\n'.join(out)
+
+    def _channelTextFieldsHTML(self):
+        """Free-text Channels / Pattern fields for users who already know PV names or
+        want a regex. Combined with whatever is ticked in the tree."""
+        return (
+            '<div align="center"><table width="700">'
+            '<tr><td width="13%%" class="widgetChanSelLabel">Channels:</td>'
+            '<td><input type="text" name="CHANNELS" size="60" maxlength="500" '
+            'value="%s"> <span style="color:#888;">(space-separated PV names; '
+            'optional &mdash; or use the tree above)</span></td></tr>'
+            '<tr><td width="13%%" class="widgetChanSelLabel">Pattern:</td>'
+            '<td><input type="text" name="PATTERN" size="60" maxlength="256" '
+            'value="%s"> <span style="color:#888;">(optional regex, e.g. '
+            'm1:ANB1.*:binDmdRbk1)</span></td></tr>'
+            '</table></div>'
+        ) % (_esc(self._params.get('CHANNELS', '') if hasattr(self, '_params') else ''),
+             _esc(self._params.get('PATTERN', '') if hasattr(self, '_params') else ''))
 
     def _getLocalRequests(self):
         # Always run _processRequest, even with an empty query string, so the recent
@@ -118,7 +177,7 @@ class DataExportPage(GeaBasePage):
             self._params = {}
             self._acted = False
         for k in ("ACTION", "JOBID", "SYSTEMS", "SYSTEMS2",
-                  "CHANNELS", "PATTERN",
+                  "CHANNELS", "PATTERN", "EXPORTCHAN",
                   "STARTYEAR", "STARTMONTH", "STARTDAY", "STARTHOUR",
                   "STARTMINUTE", "STARTSECOND",
                   "ENDYEAR", "ENDMONTH", "ENDDAY", "ENDHOUR",
@@ -151,19 +210,28 @@ class DataExportPage(GeaBasePage):
         startTime = Time().fromStartTimeDict(p, allCaps=True, monthAsWord="Auto")
         endTime = Time().fromEndTimeDict(p, allCaps=True, monthAsWord="Auto")
 
-        # Build a request-like dict for the GEAExport helpers.
-        req = {'SYSTEMS': p.get('SYSTEMS', ''), 'SYSTEMS2': p.get('SYSTEMS2', ''),
-               'CHANNELS': p.get('CHANNELS', ''), 'PATTERN': p.get('PATTERN', '')}
-        archivers = GEAExport.epicsArchivers(req)
-        channels = GEAExport.channelList(req)
-        patterns = GEAExport.patternList(req)
+        # Channels come from the checkbox tree (EXPORTCHAN, space-joined by the request
+        # parser) and/or the free-text Channels field; merge and de-dup, keeping order.
+        ticked = (p.get('EXPORTCHAN', '') or '').split()
+        typed = (p.get('CHANNELS', '') or '').split()
+        channels = []
+        for c in ticked + typed:
+            if c not in channels:
+                channels.append(c)
+        patterns = GEAExport.patternList({'PATTERN': p.get('PATTERN', '')})
 
-        if not archivers:
-            return "Please select at least one (EPICS) system."
         if not channels and not patterns:
-            return "Please select at least one channel or enter a pattern."
+            return ("Please tick at least one channel in the tree, or enter a "
+                    "channel/pattern.")
         if int(endTime.seconds) <= int(startTime.seconds):
             return "End time must be after start time."
+
+        # Systems are optional: the export reads the master index (which spans every
+        # archiver) and selects by -match, so an explicit SYSTEMS list is only used for
+        # the input-injection guard / record-keeping. Empty is fine when the user only
+        # ticked tree channels.
+        archivers = GEAExport.epicsArchivers(
+            {'SYSTEMS': p.get('SYSTEMS', ''), 'SYSTEMS2': p.get('SYSTEMS2', '')})
 
         jobid = GEAExport.newJobId()
         meta = {'channels': ' '.join(channels + patterns),
@@ -220,13 +288,17 @@ class DataExportPage(GeaBasePage):
 
         widget, building = self._recentExportsWidget()
         if building:
+            # Refresh to the CLEAN page URL (no query string), NOT the current one --
+            # the current URL still carries ACTION=export & the channel/time params, so
+            # a bare refresh would re-submit the export every interval (a pile of dup
+            # jobs). Pointing at calledName just re-renders the listing until done.
             self.html.doc.insert(0, HTMLCont(body=[
-                '<meta http-equiv="refresh" content="5">']))
+                '<meta http-equiv="refresh" content="5; url=%s">' % self.calledName]))
         self.html.doc.append(widget)
 
-        # Restore submitted values into the widgets.
-        for w in (self.html.timeSelector, self.html.chanSelector):
-            self._setWidgetVars(w, self._params, [])
+        # Restore the submitted time range into the selector. (The channel tree and
+        # text fields render their own state from self._params directly.)
+        self._setWidgetVars(self.html.timeSelector, self._params, [])
 
     def _recentExportsWidget(self):
         """An HTML table of every job in the exports dir, newest first, with a

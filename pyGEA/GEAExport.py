@@ -36,7 +36,7 @@ import subprocess
 
 import GEAVars
 from GEAException import DataExportException
-from GEADataHandler import splitArchives
+from GEADataHandler import splitArchives, dataServer
 from GEATime import Time
 
 
@@ -233,7 +233,21 @@ def _rejectFlaglike(values, what):
                 "Invalid %s '%s': must not start with '-'.\n" % (what, v))
 
 
-def _archiveExportCmd(archiver, matchExpr, startTime, endTime, outFile):
+def masterIndexPath():
+    """The index-file path ArchiveExport reads. The data server's archiver.archives()
+    returns dicts {name, key, path}; the entry whose name is '' is the master index
+    that spans every archiver, and -match selects channels within it. This is exactly
+    what EpicsDataSpreadsheetExporter.export() passes (its self._archName). ArchiveExport
+    wants this PATH as its trailing arg, NOT the archiver name (passing the name fails
+    with "Cannot open file '<name>'")."""
+    for a in dataServer.archiver.archives():
+        if a['name'] == '':
+            return a['path']
+    raise DataExportException(
+        "Could not find the master archive index from the data server.\n")
+
+
+def _archiveExportCmd(indexPath, matchExpr, startTime, endTime, outFile):
     """Build the ArchiveExport command. Mirrors EpicsDataSpreadsheetExporter.export()
     but with no -interpolate/-fill -- we want every raw sample."""
     return [
@@ -243,7 +257,7 @@ def _archiveExportCmd(archiver, matchExpr, startTime, endTime, outFile):
         '-end', endTime.string16,
         '-output', outFile,
         '-match', matchExpr,
-        archiver,
+        indexPath,
     ]
 
 
@@ -275,8 +289,7 @@ def _parseArchiveExportFile(rawPath, fallbackChannel, writer, seen=None):
     `fallbackChannel`. Splitting on tab (not whitespace) keeps values that contain
     spaces intact.
 
-    `seen`, if given, is a set used to drop duplicate (channel, ts, value) rows -- used
-    for patterns, which can match the same PV across more than one archiver."""
+    `seen`, if given, is a set used to drop duplicate (channel, ts, value) rows."""
     colChannels = None
     written = 0
     f = open(rawPath, 'r')
@@ -333,22 +346,23 @@ def _splitValueStatus(cell):
 
 
 def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=None):
-    """Run the full export for one job: ArchiveExport per (archiver, item), convert to
-    one long-format gzipped CSV, and update the status file as it goes.
+    """Run the full export for one job: ArchiveExport per item against the master
+    archive index, convert to one long-format gzipped CSV, and update the status file
+    as it goes.
 
     `channels` are explicit PV names (matched exactly, anchored); `patterns` are user
     regexes (passed to -match verbatim, may match many PVs -> several value columns).
-    Shared entry point for the inline path (called in the web request for small jobs)
-    and the detached worker (bin/gea_export_worker)."""
+    `archivers` is the user's system selection -- recorded for the listing and used to
+    sanity-check input, but channel selection is done by -match against the single
+    master index (which spans all archivers), exactly as the plotter's spreadsheet
+    export does. Shared entry point for the inline path (called in the web request for
+    small jobs) and the detached worker (bin/gea_export_worker)."""
     meta = dict(meta or {})
     meta.setdefault('channels', ' '.join(channels + patterns))
     meta.setdefault('start', startTime.string16)
     meta.setdefault('end', endTime.string16)
     meta.setdefault('created', Time().string16)
 
-    if not archivers:
-        writeStatus(jobid, ERROR, 'No EPICS archivers (systems) provided.', meta)
-        raise DataExportException("No EPICS archivers (systems) provided.\n")
     if not channels and not patterns:
         writeStatus(jobid, ERROR, 'No channels or pattern provided.', meta)
         raise DataExportException("No channels or pattern provided.\n")
@@ -365,6 +379,8 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
     items = [(c, False) for c in channels] + [(p, True) for p in patterns]
     writeStatus(jobid, RUNNING, 'Exporting %d item(s)...' % len(items), meta)
 
+    indexPath = masterIndexPath()
+
     gzFile = gzPath(jobid)
     tmpGz = gzFile + '.tmp'
     workDir = os.path.join(exportsDir(), _validateJobId(jobid) + '.work')
@@ -377,40 +393,25 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
             writer.writerow(['channel', 'timestamp', 'value', 'status'])
 
             for n, (item, isPattern) in enumerate(items):
-                ran = False        # any ArchiveExport invocation succeeded (rc 0)
-                rows = 0           # data rows written for this item
-                lastErr = ''
-                # A pattern can match the same PV in more than one selected archiver;
-                # dedup (channel, ts, value) across archivers for this item.
-                seen = set() if isPattern else None
-                for archiver in archivers:
-                    # Unique per-attempt file, removed first, so a previous archiver's
-                    # output can never be re-parsed if this ArchiveExport writes nothing.
-                    rawPath = os.path.join(workDir, 'raw.%d.txt' % n)
-                    _safeRemove(rawPath)
-                    cmd = _archiveExportCmd(archiver, _matchExpr(item, isPattern),
-                                            startTime, endTime, rawPath)
-                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                                            stderr=subprocess.STDOUT)
-                    out = proc.communicate()[0]
-                    if proc.returncode != 0:
-                        lastErr = out
-                        continue
-                    ran = True
-                    if os.path.isfile(rawPath):
-                        n_rows = _parseArchiveExportFile(rawPath, item, writer, seen)
-                        rows += n_rows
-                        # An explicit channel lives in one archiver; stop once it
-                        # actually yielded data so it isn't exported twice. A pattern
-                        # may match different PVs in different archivers, so keep going.
-                        if not isPattern and n_rows > 0:
-                            break
+                rawPath = os.path.join(workDir, 'raw.%d.txt' % n)
+                _safeRemove(rawPath)
+                cmd = _archiveExportCmd(indexPath, _matchExpr(item, isPattern),
+                                        startTime, endTime, rawPath)
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                        stderr=subprocess.STDOUT)
+                out = proc.communicate()[0]
+
+                rows = 0
+                if proc.returncode == 0 and os.path.isfile(rawPath):
+                    rows = _parseArchiveExportFile(rawPath, item, writer)
+
                 if rows == 0:
                     # No data for this item. Record why as a row so the user isn't left
-                    # with a silently-empty CSV (ArchiveExport exits 0 with a header-only
-                    # file when a name/pattern simply matches nothing in the range).
-                    if lastErr and not ran:
-                        note = 'ERROR: %s' % lastErr.strip()
+                    # with a silently-empty CSV: a non-zero exit is a real error, else
+                    # the name/pattern simply matched nothing in the range (ArchiveExport
+                    # exits 0 with a header-only file in that case).
+                    if proc.returncode != 0:
+                        note = 'ERROR: %s' % (out or '').strip()
                     else:
                         note = 'No data found in range (channel/pattern not archived?)'
                     writer.writerow([item, '', '', note])
