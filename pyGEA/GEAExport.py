@@ -574,6 +574,37 @@ def _runArchiveExport(indexPath, matchExpr, startTime, endTime, rawPath):
     return proc.returncode, out
 
 
+# Process each channel in fixed time windows rather than one giant ArchiveExport call.
+# This gives live progress ("part W of M") on a single long channel and keeps each
+# call's output bounded.
+_CHUNK_SECONDS = 30 * 86400   # ~one month per window
+
+
+def _exportItemChunked(indexPath, item, isPattern, startTime, endTime, workDir, n, sink,
+                       progress=None):
+    """Export one channel/pattern over [start, end] in _CHUNK_SECONDS windows, calling
+    progress(done_windows, total_windows, part_rows) after each so the page can show
+    movement within a single long channel. Each window still goes through _exportItem,
+    so corrupt-file bisection is preserved per window. Returns (rows, [errors])."""
+    s = int(startTime.seconds)
+    e = int(endTime.seconds)
+    span = e - s
+    nWin = max(1, (span + _CHUNK_SECONDS - 1) // _CHUNK_SECONDS)
+    seen = set()
+    totalRows = 0
+    errs = []
+    for w in range(nWin):
+        ws = s + w * _CHUNK_SECONDS
+        we = min(e, ws + _CHUNK_SECONDS)
+        r, er = _exportItem(indexPath, item, isPattern,
+                            Time(ws), Time(we), workDir, n, sink, seen)
+        totalRows += r
+        errs += er
+        if progress is not None:
+            progress(w + 1, nWin, totalRows)
+    return totalRows, errs
+
+
 def _exportItem(indexPath, item, isPattern, startTime, endTime, workDir, n, sink,
                 seen=None):
     """Export one channel/pattern over [startTime, endTime], tolerating a corrupt
@@ -666,15 +697,22 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
             # Per-channel progress (the page polls this). ETA is a plain average:
             # elapsed-so-far / done * remaining -- honest, not a fake countdown.
             # Only shown after the first channel, so there's a baseline.
-            msg = 'Exporting channel %d of %d: %s' % (n + 1, total, item)
+            prefix = 'Exporting channel %d of %d: %s' % (n + 1, total, item)
             if n > 0:
                 elapsed = Time().seconds - started
                 eta = (elapsed / n) * (total - n)
-                msg += ' (about %s left)' % _humanDuration(eta)
-            writeStatus(jobid, RUNNING, msg, meta)
+                prefix += ' (~%s left over channels)' % _humanDuration(eta)
+            writeStatus(jobid, RUNNING, prefix + '...', meta)
 
-            rows, errs = _exportItem(indexPath, item, isPattern,
-                                     startTime, endTime, workDir, n, sink)
+            # Live progress WITHIN this channel: status updates after each time window.
+            def _progress(done, nwin, partRows, _prefix=prefix):
+                writeStatus(jobid, RUNNING,
+                            '%s -- part %d of %d (%d rows so far)'
+                            % (_prefix, done, nwin, partRows), meta)
+
+            rows, errs = _exportItemChunked(indexPath, item, isPattern,
+                                            startTime, endTime, workDir, n, sink,
+                                            progress=_progress)
             if rows == 0 and not errs:
                 notes.append('%s: no data found in range (channel/pattern not '
                              'archived?)' % item)
