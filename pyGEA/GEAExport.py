@@ -259,9 +259,62 @@ def readStatus(jobid):
     return info
 
 
+def _pidAlive(pid):
+    """True if pid (a process-group leader id) still exists."""
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def sweepStale():
+    """Reclaim disk from dead/orphaned exports so the dir can't silently fill up. Runs
+    on every listing (cheap: a directory scan + a kill(pid,0) per running job):
+
+      * A job marked RUNNING whose worker pid is gone (crash / external kill / reboot)
+        will never finish or clean up -- mark it ERROR and remove its .work dir.
+      * A .work dir with NO matching .status file (left by an interrupted delete or a
+        reboot) is orphaned -- remove it.
+
+    Never touches a job whose worker is still alive."""
+    d = exportsDir()
+    statusJobs = set()
+    for p in glob.glob(os.path.join(d, '*.status')):
+        jobid = os.path.basename(p)[:-len('.status')]
+        statusJobs.add(jobid)
+        info = readStatus(jobid)
+        if not info or info.get('state') != RUNNING:
+            continue
+        # Skip a just-written status: there's a ~1s window after the page records the
+        # job (with the CGI's pid) before the worker overwrites it with its own pid. A
+        # live worker also rewrites its status frequently, so a genuinely stale job's
+        # file is old. 30s is well clear of both.
+        try:
+            if (Time().seconds - os.path.getmtime(p)) < 30:
+                continue
+        except OSError:
+            continue
+        pid = info.get('pid')
+        if pid and not _pidAlive(pid):
+            # Worker died without finishing. Record the failure and reclaim its files.
+            writeStatus(jobid, ERROR,
+                        'Export process stopped unexpectedly (worker no longer '
+                        'running).', info)
+            _safeRemoveTree(jobWorkDir(jobid))
+
+    # Orphaned .work dirs with no status file at all.
+    for w in glob.glob(os.path.join(d, '*.work')):
+        jobid = os.path.basename(w)[:-len('.work')]
+        if jobid not in statusJobs:
+            _safeRemoveTree(w)
+
+
 def listJobs():
     """All known jobs, newest first (jobids are timestamp-prefixed so a reverse sort
-    on the filename orders by creation time)."""
+    on the filename orders by creation time). Sweeps dead/orphaned jobs first so the
+    exports dir can't silently accumulate stale .work files."""
+    sweepStale()
     pattern = os.path.join(exportsDir(), '*.status')
     jobids = [os.path.basename(p)[:-len('.status')] for p in glob.glob(pattern)]
     jobids.sort(reverse=True)
