@@ -780,7 +780,11 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
 
         # Bundle the per-channel CSVs (one file per channel) into the zip. Any problems
         # go in notes.txt so the user can see what didn't export.
-        zf = zipfile.ZipFile(tmpZip, 'w', zipfile.ZIP_DEFLATED)
+        # allowZip64: a single channel's CSV can exceed the classic ZIP 2GB cap (and the
+        # whole archive certainly can for multi-year exports). Without this, zipfile
+        # raises "Filesize would require ZIP64 extensions". ZIP64 is read fine by modern
+        # unzip tools incl. Windows Explorer / pandas.
+        zf = zipfile.ZipFile(tmpZip, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
         try:
             for channel in sorted(sink.files):
                 zf.write(sink.files[channel], channelFileName(channel))

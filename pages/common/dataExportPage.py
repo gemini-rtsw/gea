@@ -159,7 +159,10 @@ class DataExportPage(GeaBasePage):
             "Every archived sample in the range is included; no decimation or "
             "interpolation is applied.\n"
             "Exports run in the background and appear in 'Recent exports' below, with "
-            "progress, offering a download link when ready."})
+            "progress, offering a download link when ready.\n"
+            "Note: a high-rate channel is roughly 0.5 GB per year (uncompressed). For "
+            "very large requests -- many channels over many years -- split it into "
+            "several smaller exports (e.g. by year or by group of channels)."})
         html.doc.append(html.intro)
 
         # Export form. HTMLFormCont's default submit button says "Update" (it's the
