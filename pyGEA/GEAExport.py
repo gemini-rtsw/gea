@@ -200,7 +200,24 @@ def statusPath(jobid):
 
 
 def zipPath(jobid):
+    """Legacy single-zip path (still used by old jobs). New exports produce numbered
+    .partNN.zip files via partPath()/jobPartPaths()."""
     return os.path.join(exportsDir(), _validateJobId(jobid) + '.zip')
+
+
+def partPath(jobid, n):
+    return os.path.join(exportsDir(), '%s.part%02d.zip' % (_validateJobId(jobid), n))
+
+
+def jobPartPaths(jobid):
+    """The export's zip parts (and any legacy single .zip), sorted. A finished export is
+    one or more <jobid>.partNN.zip files; this is what the page offers for download."""
+    _validateJobId(jobid)
+    parts = sorted(glob.glob(os.path.join(exportsDir(), jobid + '.part*.zip')))
+    legacy = zipPath(jobid)
+    if os.path.isfile(legacy):
+        parts.append(legacy)
+    return parts
 
 
 def jobWorkDir(jobid):
@@ -248,14 +265,18 @@ def readStatus(jobid):
         if len(kv) == 2:
             info[kv[0]] = kv[1]
 
-    # Stat once and tolerate a concurrent delete (another viewer / the poller could
-    # remove the zip between an existence check and the size read).
-    try:
-        info['size'] = os.path.getsize(zipPath(jobid))
-        info['ready'] = True
-    except OSError:
-        info['size'] = 0
-        info['ready'] = False
+    # Total size across all zip parts; ready once at least one part exists. Tolerant of
+    # a concurrent delete (a part vanishing between glob and getsize just counts as 0).
+    parts = jobPartPaths(jobid)
+    size = 0
+    for p in parts:
+        try:
+            size += os.path.getsize(p)
+        except OSError:
+            pass
+    info['size'] = size
+    info['ready'] = bool(parts)
+    info['parts'] = [os.path.basename(p) for p in parts]
     return info
 
 
@@ -345,7 +366,10 @@ def deleteJob(jobid):
         if pgid:
             _killGroupAndWait(pgid)
 
-    for path in (statusPath(jobid), zipPath(jobid), zipPath(jobid) + '.tmp'):
+    # status + all zip parts (and any legacy single .zip / .tmp).
+    paths = [statusPath(jobid), zipPath(jobid), zipPath(jobid) + '.tmp']
+    paths += jobPartPaths(jobid)
+    for path in paths:
         try:
             os.remove(path)
         except OSError, e:
@@ -643,6 +667,122 @@ class _ChannelSink(object):
                 pass
 
 
+# Roll to a new zip part when the current part's COMPRESSED (on-disk) size reaches this.
+# A single channel CSV bigger than this on its own is split across parts by line.
+_MAX_PART_BYTES = 2 * 1024 * 1024 * 1024   # ~2 GB per .zip part
+
+
+def _packZipParts(jobid, files, notes):
+    """Pack the per-channel CSVs into one or more ~2GB .zip parts and return the part
+    paths. We size by the ACTUAL compressed file on disk: after adding each entry, check
+    the open zip's size and roll to a new part once it crosses _MAX_PART_BYTES.
+
+    `files` is {channel: csv_path}. A CSV that alone would blow the cap is split by line
+    across consecutive parts (each piece keeps the 'timestamp,value' header and gets a
+    .partNN suffix), so no single part runs far over the cap. notes.txt (if any) goes in
+    the last part."""
+    partPaths = []
+    partNum = [0]
+    zf = [None]
+
+    def _open():
+        partNum[0] += 1
+        p = partPath(jobid, partNum[0])
+        partPaths.append(p)
+        zf[0] = zipfile.ZipFile(p, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
+
+    def _close():
+        if zf[0] is not None:
+            zf[0].close()
+
+    def _curSize():
+        try:
+            return os.path.getsize(partPaths[-1])
+        except OSError:
+            return 0
+
+    def _rollIfFull():
+        # Start a fresh part if the current one has reached the cap and isn't empty.
+        if _curSize() >= _MAX_PART_BYTES and zf[0].namelist():
+            _close()
+            _open()
+
+    _open()
+    try:
+        for channel in sorted(files):
+            src = files[channel]
+            try:
+                csize = os.path.getsize(src)
+            except OSError:
+                continue
+            arcbase = channelFileName(channel)[:-4]   # drop '.csv'
+            if csize < _MAX_PART_BYTES:
+                _rollIfFull()
+                zf[0].write(src, arcbase + '.csv')
+            else:
+                # Single CSV bigger than the cap: split it into ~cap-sized temp pieces on
+                # disk (by line, each with the header). Each piece gets its OWN part so no
+                # part runs over the cap; zf.write() streams from disk (no in-memory hold).
+                for pieceNo, piecePath in _splitCsvOnDisk(src):
+                    if zf[0].namelist():     # current part has content -> new part
+                        _close()
+                        _open()
+                    zf[0].write(piecePath, '%s.%02d.csv' % (arcbase, pieceNo))
+                    _safeRemove(piecePath)
+                # Next channel starts a fresh part.
+                _close()
+                _open()
+        if notes:
+            _rollIfFull()
+            zf[0].writestr('notes.txt', '\n'.join(notes) + '\n')
+    finally:
+        _close()
+    # Drop a trailing empty part (can happen after the last forced roll).
+    if partPaths:
+        last = partPaths[-1]
+        try:
+            if zipfile.ZipFile(last).namelist() == []:
+                _safeRemove(last)
+                partPaths.pop()
+        except (OSError, IOError, zipfile.BadZipfile):
+            pass
+    return partPaths
+
+
+# Split an oversized CSV into ~cap-sized uncompressed pieces. We size pieces by
+# UNCOMPRESSED bytes here (the compressed part ends up smaller, which is safe -- under
+# the cap, not over). Each piece is a standalone CSV (repeats the header).
+def _splitCsvOnDisk(src):
+    """Yield (pieceNumber, tempPath) for each ~cap-sized piece of `src`, split on line
+    boundaries. Caller removes each tempPath after using it. Streams line by line, so
+    O(1) memory."""
+    f = open(src, 'r')
+    try:
+        header = f.readline()
+        pieceNo = 0
+        out = None
+        outPath = None
+        written = 0
+        for line in f:
+            if out is None:
+                pieceNo += 1
+                outPath = '%s.split%02d' % (src, pieceNo)
+                out = open(outPath, 'w')
+                out.write(header)
+                written = len(header)
+            out.write(line)
+            written += len(line)
+            if written >= _MAX_PART_BYTES:
+                out.close()
+                yield (pieceNo, outPath)
+                out = None
+        if out is not None:
+            out.close()
+            yield (pieceNo, outPath)
+    finally:
+        f.close()
+
+
 # Don't bisect below this span: a corrupt archive data file covers at most a day or
 # so, so a 1-day floor isolates the bad file while keeping the number of ArchiveExport
 # calls bounded.
@@ -814,8 +954,6 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
 
     indexPath = masterIndexPath()
 
-    zipFile = zipPath(jobid)
-    tmpZip = zipFile + '.tmp'
     workDir = os.path.join(exportsDir(), _validateJobId(jobid) + '.work')
     _ensureDir(workDir)
     sink = _ChannelSink(workDir)
@@ -859,32 +997,27 @@ def runExport(jobid, archivers, channels, patterns, startTime, endTime, meta=Non
 
         sink.close()
 
-        # Bundle the per-channel CSVs (one file per channel) into the zip. Any problems
-        # go in notes.txt so the user can see what didn't export.
-        # allowZip64: a single channel's CSV can exceed the classic ZIP 2GB cap (and the
-        # whole archive certainly can for multi-year exports). Without this, zipfile
-        # raises "Filesize would require ZIP64 extensions". ZIP64 is read fine by modern
-        # unzip tools incl. Windows Explorer / pandas.
-        zf = zipfile.ZipFile(tmpZip, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
-        try:
-            for channel in sorted(sink.files):
-                zf.write(sink.files[channel], channelFileName(channel))
-            if notes:
-                zf.writestr('notes.txt', '\n'.join(notes) + '\n')
-        finally:
-            zf.close()
+        # Bundle the per-channel CSVs into one or more ~2GB .zip parts (rolled by actual
+        # compressed size; a single oversized CSV is split across parts). notes.txt holds
+        # any per-channel problems.
+        writeStatus(jobid, RUNNING, 'Compressing...', meta)
+        parts = _packZipParts(jobid, sink.files, notes)
 
-        os.rename(tmpZip, zipFile)
-        writeStatus(jobid, DONE, 'Export complete.', meta)
+        npart = len(parts)
+        doneMsg = ('Export complete.' if npart <= 1
+                   else 'Export complete (%d parts).' % npart)
+        writeStatus(jobid, DONE, doneMsg, meta)
     except Exception, e:
         sink.close()
-        _safeRemove(tmpZip)
+        # Clean up any partial parts on failure.
+        for p in jobPartPaths(jobid):
+            _safeRemove(p)
         writeStatus(jobid, ERROR, str(e), meta)
         raise
     finally:
         _safeRemoveTree(workDir)
 
-    return zipFile
+    return jobPartPaths(jobid)
 
 
 def _humanDuration(seconds):

@@ -159,10 +159,8 @@ class DataExportPage(GeaBasePage):
             "Every archived sample in the range is included; no decimation or "
             "interpolation is applied.\n"
             "Exports run in the background and appear in 'Recent exports' below, with "
-            "progress, offering a download link when ready.\n"
-            "Note: a high-rate channel is roughly 0.5 GB per year (uncompressed). For "
-            "very large requests -- many channels over many years -- split it into "
-            "several smaller exports (e.g. by year or by group of channels)."})
+            "progress, offering download link(s) when ready. Large exports are split "
+            "into multiple ~2 GB zip parts automatically."})
         html.doc.append(html.intro)
 
         # Export form. HTMLFormCont's default submit button says "Update" (it's the
@@ -689,9 +687,14 @@ if(window.addEventListener){ window.addEventListener('load', exportSyncChannels,
         for job in jobs:
             state = job['state']
             if state == DONE and job['ready']:
-                dl = HtmlHelper.createLink(
-                    'ZIP',
-                    os.path.join(GEAVars.path.web.exports, job['jobid'] + '.zip'))
+                # One download link per zip part (a big export splits into ~2GB parts).
+                parts = job.get('parts') or [job['jobid'] + '.zip']
+                links = []
+                for idx, fname in enumerate(parts):
+                    label = 'ZIP' if len(parts) == 1 else ('part %d' % (idx + 1))
+                    links.append(HtmlHelper.createLink(
+                        label, os.path.join(GEAVars.path.web.exports, fname)))
+                dl = ' '.join(links)
                 size = _fmtSize(job['size'])
             elif state == ERROR:
                 dl = ''
