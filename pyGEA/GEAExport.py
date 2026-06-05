@@ -272,19 +272,25 @@ def listJobs():
 
 
 def deleteJob(jobid):
-    """Remove a job entirely: kill its worker if still running (so it stops writing),
-    then delete its status, zip, temp zip, and the .work dir (with any large raw/CSV
-    files inside). Deleting a RUNNING job previously left the .work dir orphaned with
-    hundreds of MB, because the worker's own cleanup (finally: rmtree) only runs if it
-    finishes normally. Only ever touches paths for this validated jobid."""
-    # Kill the worker first, if we recorded its pid and it's still alive.
+    """Remove a job entirely: stop its worker if still running, then delete its status,
+    zip, temp zip, and the .work dir (with any large raw/CSV files inside).
+
+    Deleting a RUNNING job is the tricky case. Two things must happen before we remove
+    the .work dir, or the worker recreates files into it right after:
+      * kill the whole PROCESS GROUP, not just the worker pid -- the worker did
+        setsid() (so its pid == its pgid) and the heavy writer is its ArchiveExport
+        CHILD, which wouldn't get a signal aimed only at the worker.
+      * actually WAIT for it to die (SIGTERM, then SIGKILL) before rmtree, so it can't
+        write into the dir we're deleting.
+    Only ever touches paths for this validated jobid."""
     info = readStatus(jobid)
     if info and info.get('pid'):
         try:
-            pid = int(info['pid'])
-            os.kill(pid, signal.SIGTERM)
-        except (ValueError, OSError):
-            pass   # gone already / not ours / not a number
+            pgid = int(info['pid'])
+        except ValueError:
+            pgid = None
+        if pgid:
+            _killGroupAndWait(pgid)
 
     for path in (statusPath(jobid), zipPath(jobid), zipPath(jobid) + '.tmp'):
         try:
@@ -293,6 +299,28 @@ def deleteJob(jobid):
             if e.errno != errno.ENOENT:
                 raise
     _safeRemoveTree(jobWorkDir(jobid))
+
+
+def _killGroupAndWait(pgid):
+    """SIGTERM the process group, wait briefly for it to exit, then SIGKILL if needed.
+    Uses killpg so the worker's ArchiveExport child dies too (worker is the group
+    leader via setsid). Best-effort: a process group that's already gone is fine."""
+    import time
+    def _alive():
+        try:
+            os.killpg(pgid, 0)   # signal 0 = existence check
+            return True
+        except OSError:
+            return False
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except OSError:
+            return   # already gone
+        for _ in range(20):      # up to ~2s per signal
+            if not _alive():
+                return
+            time.sleep(0.1)
 
 
 # ----------------------------------------------------------------------------
