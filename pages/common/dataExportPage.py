@@ -160,7 +160,7 @@ class DataExportPage(GeaBasePage):
             "interpolation is applied.\n"
             "Exports run in the background and appear in 'Recent exports' below, with "
             "progress, offering download link(s) when ready. Large exports are split "
-            "into multiple ~2 GB zip parts automatically."})
+            "automatically into multiple parts of about 2 GB of data each."})
         html.doc.append(html.intro)
 
         # Export form. HTMLFormCont's default submit button says "Update" (it's the
