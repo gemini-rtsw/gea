@@ -667,45 +667,37 @@ class _ChannelSink(object):
                 pass
 
 
-# Roll to a new zip part when the current part's COMPRESSED (on-disk) size reaches this.
-# A single channel CSV bigger than this on its own is split across parts by line.
-_MAX_PART_BYTES = 2 * 1024 * 1024 * 1024   # ~2 GB per .zip part
+# Roll to a new part after about this much CSV DATA (uncompressed); the .zip files end
+# up smaller since the data compresses. A single channel CSV bigger than this on its
+# own is split across parts by line.
+_MAX_PART_BYTES = 2 * 1024 * 1024 * 1024   # ~2 GB of data per part
 
 
 def _packZipParts(jobid, files, notes):
-    """Pack the per-channel CSVs into one or more ~2GB .zip parts and return the part
-    paths. We size by the ACTUAL compressed file on disk: after adding each entry, check
-    the open zip's size and roll to a new part once it crosses _MAX_PART_BYTES.
+    """Pack the per-channel CSVs into parts of about _MAX_PART_BYTES of CSV DATA each
+    (uncompressed); the resulting .zip files are smaller since the data compresses.
+    Returns the part paths.
 
-    `files` is {channel: csv_path}. A CSV that alone would blow the cap is split by line
-    across consecutive parts (each piece keeps the 'timestamp,value' header and gets a
-    .partNN suffix), so no single part runs far over the cap. notes.txt (if any) goes in
-    the last part."""
+    Sizing is by CSV (uncompressed) bytes accumulated into the current part -- the SAME
+    rule whether a part holds several small channels or a slice of one huge channel, so
+    the two cases can't diverge. A CSV that alone exceeds the cap is split by line across
+    consecutive parts (each piece keeps the 'timestamp,value' header and gets a .NN
+    suffix). notes.txt (if any) goes in the last part."""
     partPaths = []
     partNum = [0]
     zf = [None]
+    partBytes = [0]   # CSV (uncompressed) bytes written into the current part
 
     def _open():
         partNum[0] += 1
         p = partPath(jobid, partNum[0])
         partPaths.append(p)
         zf[0] = zipfile.ZipFile(p, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
+        partBytes[0] = 0
 
     def _close():
         if zf[0] is not None:
             zf[0].close()
-
-    def _curSize():
-        try:
-            return os.path.getsize(partPaths[-1])
-        except OSError:
-            return 0
-
-    def _rollIfFull():
-        # Start a fresh part if the current one has reached the cap and isn't empty.
-        if _curSize() >= _MAX_PART_BYTES and zf[0].namelist():
-            _close()
-            _open()
 
     _open()
     try:
@@ -717,8 +709,13 @@ def _packZipParts(jobid, files, notes):
                 continue
             arcbase = channelFileName(channel)[:-4]   # drop '.csv'
             if csize < _MAX_PART_BYTES:
-                _rollIfFull()
+                # Roll to a fresh part if adding this channel would push the current
+                # part past the cap (and it already has content).
+                if partBytes[0] and partBytes[0] + csize > _MAX_PART_BYTES:
+                    _close()
+                    _open()
                 zf[0].write(src, arcbase + '.csv')
+                partBytes[0] += csize
             else:
                 # Single CSV bigger than the cap: split it into ~cap-sized temp pieces on
                 # disk (by line, each with the header). Each piece gets its OWN part so no
@@ -733,7 +730,7 @@ def _packZipParts(jobid, files, notes):
                 _close()
                 _open()
         if notes:
-            _rollIfFull()
+            # notes.txt is tiny; just put it in the current part.
             zf[0].writestr('notes.txt', '\n'.join(notes) + '\n')
     finally:
         _close()
