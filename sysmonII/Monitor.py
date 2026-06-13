@@ -290,6 +290,49 @@ class Monitor:
     self.failed = False
     log.debug("Unknown Trigger %s %s" % (self.fltval, self.trgconf))
 
+  def resolveGeaLink(self):
+    """
+      Look up which GEA archive contains this PV and build the plotter page
+      URL embedded in alert emails. Sets geaurl/geaServer/geaArchName and
+      returns the URL, or None if the PV isn't in any archive or the lookup
+      failed. Called at config load; notify() retries it if the lookup failed
+      so links recover without a restart.
+    """
+    import xmlrpc.client
+
+    if self.site == 'CP': localserver = "http://geasouth.cl.gemini.edu/"
+    else:                 localserver = "http://geanorth.hi.gemini.edu/"
+
+    try:
+      dataServer = xmlrpc.client.Server(localserver + "run/ArchiveDataServer.cgi")
+      archives   = dataServer.archiver.archives()
+    except Exception as e:
+      log.warn("GEA link lookup for %s: archive data server unreachable: %s" % (self.pvname, e))
+      return None
+
+    for archiver in archives:
+      if archiver['name'][0:1] == '-' or len(archiver['name']) < 2:
+        continue
+
+      key  = archiver['key']
+      name = archiver['name']
+
+      try:
+        matches = dataServer.archiver.names(key, self.pvname)
+      except Exception as e:
+        log.warn("GEA link lookup for %s: names() failed in archive %s: %s" % (self.pvname, name, e))
+        continue
+
+      if matches:
+        self.geaurl      = "%s/pages/common/plotterPage?PATTERN=%s&SYSTEMS=%s" % (localserver, self.pvname, name)
+        self.geaServer   = localserver
+        self.geaArchName = name
+        return self.geaurl
+
+    log.warn("GEA link lookup: no archive contains %s" % self.pvname)
+    return None
+
+
   def notify(self, failed):
 
    # if failed == self.failed:
@@ -329,6 +372,14 @@ class Monitor:
         except Exception as e:
           log.warn("Error building recipient list, falling back to tier 1: %s" % e)
           recipients = self.system.notify
+
+        # The archive lookup at config load fails if the archive data server
+        # wasn't up yet (e.g., restarted alongside it) and the None was cached
+        # for the life of the process, leaving href="None" in alert emails.
+        # Retry here so the link (and the GEA plot below) recover on their own.
+        if self.geaurl is None and self.resolveGeaLink():
+          log.info("GEA link resolved late for %s: %s" % (self.pvname, self.geaurl))
+          if self.options: self.options.pop('noLink', None)	# Drop the flag loadConfig injected on failure
 
         # Try to attach a "last few hours" plot inline. Prefer the GEA-archive
         # plot (matches what users see when clicking the PV link); fall back to
