@@ -7,6 +7,7 @@ function writeMenu()
 <tr><td class="menuTitle">Daily/Reports</td></tr> \n\
 <tr><td class="menuItem"><a class="menuItem" href="/pages/engineeringPage?">Engineering</a></td></tr> \n\
 <tr><td class="menuItem"><a class="menuItem" href="/pages/sysMonitorPage?">System Monitor</a></td></tr> \n\
+<tr><td class="menuItem"><a class="menuItem" href="/pages/common/dataExportPage?">Data Export</a></td></tr> \n\
 <tr><td class="menuItem"><a class="menuItem" href="/pages/logWatcherPage?">Log Watcher</a></td></tr> \n\
 <tr><td class="menuItem"><a class="menuItem" href="http://project.gemini.edu:2010/Plan/Overview.aspx">Weekly Plan</a></td></tr> \n\
 <tr><td class="menuItem"><a class="menuItem" href="/pages/remedy/frsPage?">Fault Reports</a></td></tr> \n\
