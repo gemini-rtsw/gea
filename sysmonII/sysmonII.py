@@ -88,10 +88,13 @@ class sysmonII:
         m.system  = system
         m.doemail = js['doemail'] if 'doemail' in js else False
         m.uuid    = uuid
-        geaurl = m.resolveGeaLink()	# Sets m.geaurl/geaServer/geaArchName; notify() retries if this fails
+        # A failed lookup is runtime state (m.geaurl stays None), never written
+        # into m.options: options is the same dict as the loaded config, so a
+        # flag injected here gets persisted by any later saveConfig() and the
+        # transient failure becomes a permanent noLink in sysmonII.json.
+        m.resolveGeaLink()	# Sets m.geaurl/geaServer/geaArchName; notify() retries if this fails
         if m.options == None:
           m.options = {}
-        if geaurl == None: m.options['noLink'] = True
         self.monitors[uuid] = m			# Indexed by uuid so that WebInterface can find it.
         system.monitors.append(m)
         if pvname in self.cache:

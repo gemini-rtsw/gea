@@ -379,7 +379,6 @@ class Monitor:
         # Retry here so the link (and the GEA plot below) recover on their own.
         if self.geaurl is None and self.resolveGeaLink():
           log.info("GEA link resolved late for %s: %s" % (self.pvname, self.geaurl))
-          if self.options: self.options.pop('noLink', None)	# Drop the flag loadConfig injected on failure
 
         # Try to attach a "last few hours" plot inline. Prefer the GEA-archive
         # plot (matches what users see when clicking the PV link); fall back to

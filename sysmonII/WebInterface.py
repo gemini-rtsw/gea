@@ -96,7 +96,9 @@ class WebInterface(BaseHTTPRequestHandler):
         pvname =  monitor.pvname
         r = t.row()
 
-        if monitor.options and 'noLink' in monitor.options:
+        # noLink in options is a deliberate user setting; geaurl is None when
+        # the archive lookup failed or the PV isn't archived.
+        if (monitor.options and 'noLink' in monitor.options) or monitor.geaurl is None:
           cm = pvname
         else:
           cm = '<a target="_parent" href="%s">%s</a>' % (monitor.geaurl, pvname)
