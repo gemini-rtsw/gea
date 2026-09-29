@@ -91,14 +91,14 @@ ned.
             columns=[[],[],[]]
             
             for item, col in zip(heading, columns):
-                files=glob.glob(os.path.join(dir, item, '*.mpeg'))
+                files=glob.glob(os.path.join(dir, item, '*.mpeg')) + glob.glob(os.path.join(dir, item, '*.mp4'))
                 
                 #Only want the files names.. no path.
                 files=map(lambda x: os.path.split(x)[-1], files)
 
                 for f in files:
                     #Strip the name a little, and only show the date part
-                    name=re.sub('.*Animation', '', re.sub('.mpeg$', '', f))
+                    name=re.sub('.*Animation', '', re.sub('\.(mpeg|mp4)$', '', f))
                     link=HtmlHelper.createLink(name,os.path.join(GEAVars.path.web.m1SurfacePlots, 
                                                                 dateDirName, 
                                                                 item, 

@@ -22,7 +22,7 @@ def createAnimation(dir=None):
     for d in sorted(glob.glob('*.png')):
         os.system('ln %s img%d.png' % (d, i))
         i = i + 1
-    os.system('ffmpeg -sameq -f image2 -i img%%d.png %sAnimation%s.mpeg' % (os.path.split(dir)[-1], Time().string2))
+    os.system('/gemsoft/opt/gea/bin/ffmpeg -f image2 -i img%%d.png -c:v libx264 -pix_fmt yuv420p -crf 20 -movflags +faststart  %sAnimation%s.mp4' % (os.path.split(dir)[-1], Time().string2))
     os.system('rm -f img[0-9]*.png')
     
 def removeImageFiles(dir=None):
