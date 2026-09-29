@@ -23,6 +23,16 @@ from datetime import timedelta
 import logging
 log = logging.getLogger("sysmonII")
 
+def exactPattern(pvname):
+  """
+    GEA's archiver.names() and plotterPage PATTERN take an unanchored regex, so
+    a bare "lhx:procLoad" also matches "glhx:procLoad" and the test lab's
+    channel leaks into the link lookup and alert plot. Escape regex
+    metacharacters (e.g. the '.' in "foo.VAL") and anchor both ends so only
+    the exact channel matches.
+  """
+  return "^" + "".join("\\" + c if c in ".^$*+?()[]{}|\\" else c for c in pvname) + "$"
+
 class MonitorException(Exception):
   """ Raised when a filter or trigger fails."""
 
@@ -299,6 +309,7 @@ class Monitor:
       so links recover without a restart.
     """
     import xmlrpc.client
+    import urllib.parse
 
     if self.site == 'CP': localserver = "http://geasouth.cl.gemini.edu/"
     else:                 localserver = "http://geanorth.hi.gemini.edu/"
@@ -318,13 +329,13 @@ class Monitor:
       name = archiver['name']
 
       try:
-        matches = dataServer.archiver.names(key, self.pvname)
+        matches = dataServer.archiver.names(key, exactPattern(self.pvname))
       except Exception as e:
         log.warn("GEA link lookup for %s: names() failed in archive %s: %s" % (self.pvname, name, e))
         continue
 
       if matches:
-        self.geaurl      = "%s/pages/common/plotterPage?PATTERN=%s&SYSTEMS=%s" % (localserver, self.pvname, name)
+        self.geaurl      = "%s/pages/common/plotterPage?%s" % (localserver, urllib.parse.urlencode({'PATTERN': exactPattern(self.pvname), 'SYSTEMS': name}))
         self.geaServer   = localserver
         self.geaArchName = name
         return self.geaurl
@@ -711,7 +722,7 @@ class Monitor:
       }
 
     params = {
-      'PATTERN': self.pvname,
+      'PATTERN': exactPattern(self.pvname),
       'SYSTEMS': self.geaArchName,
     }
     params.update(_timeFields('START', start))

@@ -31,10 +31,15 @@ ds = xmlrpc.client.Server(server + "run/ArchiveDataServer.cgi")
 archives = [a for a in ds.archiver.archives()
             if not a['name'].startswith('-') and len(a['name']) >= 2]
 
+def exactPattern(pvname):
+    # names() takes an unanchored regex; anchor it so "lhx:x" can't match
+    # "glhx:x" (same helper as Monitor.exactPattern).
+    return "^" + "".join("\\" + c if c in ".^$*+?()[]{}|\\" else c for c in pvname) + "$"
+
 def archived(pvname):
     for a in archives:
         try:
-            if ds.archiver.names(a['key'], pvname):
+            if ds.archiver.names(a['key'], exactPattern(pvname)):
                 return a['name']
         except Exception as e:
             print("  WARN names() failed in %s for %s: %s" % (a['name'], pvname, e))
